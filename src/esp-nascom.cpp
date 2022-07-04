@@ -4,11 +4,12 @@
 //
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include "ESP32Lib.h"
 #include "devdrivers/keyboard.h"
 #include "NascomFont.h"
 
-//pin configuration
+// Pin configuration
 class Pins {
 public:
   static const gpio_num_t red      = GPIO_NUM_14;
@@ -20,6 +21,7 @@ public:
 	static const gpio_num_t kbdData  = GPIO_NUM_26;
 };
 
+// Nascom display
 class NascomDisplay {
 	VGA3Bit vga;
 public:
@@ -49,6 +51,7 @@ public:
 	}
 };
 
+// Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
 	static const uint32_t mapSize = 8;
 	uint8_t map[mapSize];
@@ -126,6 +129,7 @@ public:
 };
 constexpr char NascomKeyboardMap::encoding[mapSize][9];
 
+// Nascom keyboard
 class NascomKeyboard {
 	fabgl::Keyboard        keyboard;
 	NascomDisplay         &display;
@@ -181,47 +185,67 @@ public:
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
+bool nasFileLoad(const char *fileName) {
+	uint16_t a;
+	uint8_t  b0, b1, b2, b3, b4, b5, b6, b7;
+	File     file = LittleFS.open(fileName, "r");
+	uint32_t numBytes = 0;
+
+	if (!file) {
+		DEBUG_PRINTF("Cannot open: %s\n", fileName);
+		return false;
+	}
+
+	DEBUG_PRINTF("Loading %s\n", fileName);
+
+  const size_t bufSize = 100;
+  char buffer[bufSize];
+	while (file.available()) {
+    size_t l = file.readBytesUntil('\n', buffer, bufSize-1);
+		buffer[l] = 0;
+		if (buffer[0] == '.') {
+			break;
+		}
+		char *p = buffer;
+		a  = strtoul(p, &p, 16);
+		b0 = strtoul(p, &p, 16);
+		b1 = strtoul(p, &p, 16);
+		b2 = strtoul(p, &p, 16);
+		b3 = strtoul(p, &p, 16);
+		b4 = strtoul(p, &p, 16);
+		b5 = strtoul(p, &p, 16);
+		b6 = strtoul(p, &p, 16);
+		b7 = strtoul(p, &p, 16);
+		//DEBUG_PRINTF("%04x %02x %02x %02x %02x %02x %02x %02x %02x\n", a, b0, b1, b2, b3, b4, b5, b6, b7);
+		numBytes += 8;
+	}
+
+	file.close();
+
+	DEBUG_PRINTF("%d (%04x) bytes loaded\n", numBytes, numBytes);
+	return true;
+}
+
+
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
 
-static uint8_t codes[0x85] = {0};
-void dumpOrderedScanCodes() {
-	for (uint8_t sci = 0; sci < 86; sci++) {
-		if ((sci > 0) && (sci % 8 == 0))
-			Serial.printf("\n");
-		uint8_t sc = fabgl::USLayout.scancodeToVK[sci].scancode;
-		Serial.printf("%02X ", sc);
-		codes[sc] = sci;
-	}
-	Serial.printf("Used scan codes:\n");
-	for (uint32_t i = 0; i < 0x85; i++) {
-		if ((i > 0) && (i % 8 == 0))
-			Serial.printf("\n");
-		Serial.printf("%02X ", codes[i]);
-	}
-}
-
 void setup() {
 	Serial.begin(115200);
+  DEBUG_PRINTF("Mount LittleFS\n");
+  if (!LittleFS.begin()) {
+    DEBUG_PRINTF("LittleFS mount failed\n");
+    return;
+  }
+	File dir = LittleFS.open("/");
+	while (File file = dir.openNextFile()) {
+		DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
+	}	
 	nascomDisplay.init();
 	nascomKeyboard.init();
-//	dumpOrderedScanCodes();
+	nasFileLoad("/nassys3.nal");
 }
 
 void loop() {
-#if 0	
-  static uint32_t clen = 1;
-	fabgl::Keyboard &keyboard = nascomKeyboard.getKeyboard();
-  if (keyboard.scancodeAvailable()) {
-    int scode = nascomKeyboard.getKeyboard().getNextScancode();
-    Serial.printf("%02X ", scode);
-    if (scode == 0xF0 || scode == 0xE0) ++clen;
-    --clen;
-    if (clen == 0) {
-      clen = 1;
-      Serial.printf("%s\n", keyboard.virtualKeyToString(keyboard.scancodeToVK(scode, false)));
-    }
-  }
-#endif
 	vTaskSuspend(NULL);
 }
