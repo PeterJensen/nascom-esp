@@ -8,6 +8,32 @@
 #include "ESP32Lib.h"
 #include "devdrivers/keyboard.h"
 #include "NascomFont.h"
+#include "simz80.h"
+
+namespace z80 {
+	// Z80 state
+	WORD af[2];                  // accumulator and flags (2 banks)
+	int af_sel;                  // bank select for af
+	struct ddregs regs[2];       // bc,de,hl
+	int regs_sel;                // bank select for ddregs
+	WORD ir;                     // other Z80 registers
+	WORD ix;
+	WORD iy;
+	WORD sp;
+	WORD pc;
+	WORD IFF;
+	BYTE ram[MEMSIZE*1024+1];  // The +1 location is for the wraparound GetWord
+	int in(uint32_t port) {
+		//DEBUG_PRINTF("in(%d) called\n", port);
+		if (port == 0)
+		  return 0xff;
+		else
+		  return 0;
+	}
+	void out(uint32_t port, uint8_t value) {
+		//DEBUG_PRINTF("out(%d, %d) called \n", port, value);
+	}
+};
 
 // Pin configuration
 class Pins {
@@ -32,8 +58,13 @@ public:
 	uint32_t cx = 0;
 	uint32_t cy = 0;
   void init() {
+		//vga.setFrameBufferCount(2);
 		vga.init(vga.MODE400x300, Pins::red, Pins::green, Pins::blue, Pins::hsync, Pins::vsync);
 		vga.setFont(NascomFont);
+		vga.setTextColor(vga.RGB(255, 255, 255), vga.RGB(0, 0, 0));
+	}
+	void show() {
+		//vga.show();
 	}
 	void drawCharAt(uint32_t x, uint32_t y, uint8_t ch) {
 		vga.drawChar((x + leftMargin)*NascomFont.charWidth, (y + topMargin)*NascomFont.charHeight, ch);
@@ -162,6 +193,7 @@ class NascomKeyboard {
 			if (down) {
 				if (asc != -1) {
 					self->display.putChar(asc);
+					self->display.drawCharAt(0, 0, asc);
 				}
 			}
   		mapUpdated = self->map.setAsciiChar(asc, down);
@@ -185,50 +217,99 @@ public:
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
-bool nasFileLoad(const char *fileName) {
-	uint16_t a;
-	uint8_t  b0, b1, b2, b3, b4, b5, b6, b7;
-	File     file = LittleFS.open(fileName, "r");
-	uint32_t numBytes = 0;
-
-	if (!file) {
-		DEBUG_PRINTF("Cannot open: %s\n", fileName);
-		return false;
+// Nascom memory
+class NascomMemory {
+	uint8_t *mem;
+public:
+  NascomMemory(uint8_t *mem) : mem(mem) {}
+	uint8_t *getMemPtr() {
+		return mem;
 	}
-
-	DEBUG_PRINTF("Loading %s\n", fileName);
-
-  const size_t bufSize = 100;
-  char buffer[bufSize];
-	while (file.available()) {
-    size_t l = file.readBytesUntil('\n', buffer, bufSize-1);
-		buffer[l] = 0;
-		if (buffer[0] == '.') {
-			break;
+	bool nasFileLoad(const char *fileName) {
+		uint16_t addr;
+		File     file = LittleFS.open(fileName, "r");
+		uint32_t numBytes = 0;
+		if (!file) {
+			DEBUG_PRINTF("Cannot open: %s\n", fileName);
+			return false;
 		}
-		char *p = buffer;
-		a  = strtoul(p, &p, 16);
-		b0 = strtoul(p, &p, 16);
-		b1 = strtoul(p, &p, 16);
-		b2 = strtoul(p, &p, 16);
-		b3 = strtoul(p, &p, 16);
-		b4 = strtoul(p, &p, 16);
-		b5 = strtoul(p, &p, 16);
-		b6 = strtoul(p, &p, 16);
-		b7 = strtoul(p, &p, 16);
-		//DEBUG_PRINTF("%04x %02x %02x %02x %02x %02x %02x %02x %02x\n", a, b0, b1, b2, b3, b4, b5, b6, b7);
-		numBytes += 8;
+		DEBUG_PRINTF("Loading %s\n", fileName);
+		const size_t bufSize = 100;
+		char buffer[bufSize];
+		while (file.available()) {
+			size_t l = file.readBytesUntil('\n', buffer, bufSize-1);
+			buffer[l] = 0;
+			if (buffer[0] == '.') {
+				break;
+			}
+			char *p = buffer;
+			addr  = strtoul(p, &p, 16);
+			// DEBUG_PRINTF("%04x:", addr);
+			for (uint8_t b = 0; b < 8; b++) {
+				uint8_t byte = strtoul(p, &p, 16);
+				mem[addr+b] = byte;
+				if (addr + b == 0) {
+				  mem[0x10000] = mem[0]; // make getWord(0xffff) work correctly
+				}
+				// DEBUG_PRINTF(" %02x", byte);
+			}
+			// DEBUG_PRINTF("\n");
+			numBytes += 8;
+		}
+		file.close();
+		DEBUG_PRINTF("%d (%04x) bytes loaded\n", numBytes, numBytes);
+		return true;
 	}
+};
 
-	file.close();
-
-	DEBUG_PRINTF("%d (%04x) bytes loaded\n", numBytes, numBytes);
-	return true;
+static void updateDisplay(NascomDisplay &display, NascomMemory &memory) {
+	//DEBUG_PRINTF("Display Memory:\n");
+	uint8_t *ram = memory.getMemPtr();
+	for (uint8_t *p0 = ram + 0x80A;
+			 p0 < ram + 0xC00;
+			 p0 += 64) {
+		//DEBUG_PRINTF("%04x:", p0 - ram);
+		for (uint8_t *p = p0;
+		     p < p0 + 48;
+				 ++p) {
+			uint32_t index = p - ram - 0x800;
+			uint32_t x     = index % 64 - 10;
+			uint32_t y     = index / 64;
+			y = (y + 1) % 16; // The last line is the first line
+			display.drawCharAt(x, y, *p);
+			//DEBUG_PRINTF(" %02x", *p);
+		}
+		//DEBUG_PRINTF("\n");
+	}
+	display.show();
 }
-
 
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
+NascomMemory    nascomMemory(z80::ram);
+
+static int simAction() {
+#if 0	
+	static uint32_t count = 0;
+	if (count == 60) {
+		DEBUG_PRINTF("simAction called: pc = %04x, sp = %04x\n", z80::pc, z80::sp);
+		updateDisplay(nascomDisplay, nascomMemory);
+	}
+	count++;
+#else
+	static uint32_t count = 0;
+	static int32_t start = 0;
+  count++;
+  if (count == 60) {
+		int32_t now = millis();
+		DEBUG_PRINTF("simAction called 60 times: %.3f\n", ((float)(now - start))/1000);
+		start = now;
+		count = 0;
+	}
+	updateDisplay(nascomDisplay, nascomMemory);
+#endif
+	return 0;
+}
 
 void setup() {
 	Serial.begin(115200);
@@ -240,10 +321,15 @@ void setup() {
 	File dir = LittleFS.open("/");
 	while (File file = dir.openNextFile()) {
 		DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
-	}	
+		file.close();
+	}
+	dir.close();
 	nascomDisplay.init();
 	nascomKeyboard.init();
-	nasFileLoad("/nassys3.nal");
+	nascomMemory.nasFileLoad("/nassys3.nal");
+	nascomMemory.nasFileLoad("/basic.nal");
+	z80::simz80(0, 27712, simAction);
+	DEBUG_PRINTF("pc = %04x, sp = %04x\n", z80::pc, z80::sp);
 }
 
 void loop() {
