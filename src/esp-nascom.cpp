@@ -84,14 +84,18 @@ public:
 
 // Nascom display
 class NascomDisplay {
-	VGA3Bit vga;
-public:
+private:  
   static const uint32_t width      = 48;
 	static const uint32_t height     = 16;
 	static const uint32_t leftMargin = 1;
 	static const uint32_t topMargin  = 1;
-	uint32_t cx = 0;
-	uint32_t cy = 0;
+	VGA3Bit               vga;
+  bool                  cacheInitialized = false;
+  bool                  cacheUsed        = true;
+  uint8_t               cache[width*height];
+	uint32_t              cx = 0;
+	uint32_t              cy = 0;
+public:
   void init() {
 		//vga.setFrameBufferCount(2);
 		vga.init(vga.MODE400x300, Pins::red, Pins::green, Pins::blue, Pins::hsync, Pins::vsync);
@@ -101,6 +105,9 @@ public:
 	void show() {
 		//vga.show();
 	}
+  void setCacheUsed(bool used) {
+    cacheUsed = used;
+  }
 	void drawCharAt(uint32_t x, uint32_t y, uint8_t ch) {
 		vga.drawChar((x + leftMargin)*NascomFont.charWidth, (y + topMargin)*NascomFont.charHeight, ch);
 	}
@@ -129,11 +136,23 @@ public:
         uint32_t x     = index % 64 - 10;
         uint32_t y     = index / 64;
         y = (y + 1) % 16; // The last line is the first line
-        drawCharAt(x, y, *p);
+        if (cacheUsed && !cacheInitialized) {
+          cache[x + y*width] = *p;
+        }
+        if (cacheUsed && cacheInitialized) {
+          if (cache[x + y*width] != *p) {
+            drawCharAt(x, y, *p);
+            cache[x + y*width] = *p;
+          }
+        }
+        else {
+          drawCharAt(x, y, *p);
+        }
         //DEBUG_PRINTF(" %02x", *p);
       }
       //DEBUG_PRINTF("\n");
     }
+    cacheInitialized = cacheUsed;
     show();
   }
 };
