@@ -23,16 +23,6 @@ namespace z80 {
 	WORD pc;
 	WORD IFF;
 	BYTE ram[MEMSIZE*1024+1];  // The +1 location is for the wraparound GetWord
-	int in(uint32_t port) {
-		//DEBUG_PRINTF("in(%d) called\n", port);
-		if (port == 0)
-		  return 0xff;
-		else
-		  return 0;
-	}
-	void out(uint32_t port, uint8_t value) {
-		//DEBUG_PRINTF("out(%d, %d) called \n", port, value);
-	}
 };
 
 // Pin configuration
@@ -45,6 +35,51 @@ public:
   static const gpio_num_t vsync    = GPIO_NUM_33;
 	static const gpio_num_t kbdClock = GPIO_NUM_25;
 	static const gpio_num_t kbdData  = GPIO_NUM_26;
+};
+
+// Nascom memory
+class NascomMemory {
+	uint8_t *mem;
+public:
+  NascomMemory(uint8_t *mem) : mem(mem) {}
+	uint8_t *getMemPtr() {
+		return mem;
+	}
+	bool nasFileLoad(const char *fileName) {
+		uint16_t addr;
+		File     file = LittleFS.open(fileName, "r");
+		uint32_t numBytes = 0;
+		if (!file) {
+			DEBUG_PRINTF("Cannot open: %s\n", fileName);
+			return false;
+		}
+		DEBUG_PRINTF("Loading %s\n", fileName);
+		const size_t bufSize = 100;
+		char buffer[bufSize];
+		while (file.available()) {
+			size_t l = file.readBytesUntil('\n', buffer, bufSize-1);
+			buffer[l] = 0;
+			if (buffer[0] == '.') {
+				break;
+			}
+			char *p = buffer;
+			addr  = strtoul(p, &p, 16);
+			// DEBUG_PRINTF("%04x:", addr);
+			for (uint8_t b = 0; b < 8; b++) {
+				uint8_t byte = strtoul(p, &p, 16);
+				mem[addr+b] = byte;
+				if (addr + b == 0) {
+				  mem[0x10000] = mem[0]; // make getWord(0xffff) work correctly
+				}
+				// DEBUG_PRINTF(" %02x", byte);
+			}
+			// DEBUG_PRINTF("\n");
+			numBytes += 8;
+		}
+		file.close();
+		DEBUG_PRINTF("%d (%04x) bytes loaded\n", numBytes, numBytes);
+		return true;
+	}
 };
 
 // Nascom display
@@ -80,6 +115,27 @@ public:
 			}
 		}
 	}
+  void updateFromMemory(NascomMemory &memory) {
+    //DEBUG_PRINTF("NascomDisplay::updateFromMemory:\n");
+    uint8_t *ram = memory.getMemPtr();
+    for (uint8_t *p0 = ram + 0x80A;
+        p0 < ram + 0xC00;
+        p0 += 64) {
+      //DEBUG_PRINTF("%04x:", p0 - ram);
+      for (uint8_t *p = p0;
+          p < p0 + 48;
+          ++p) {
+        uint32_t index = p - ram - 0x800;
+        uint32_t x     = index % 64 - 10;
+        uint32_t y     = index / 64;
+        y = (y + 1) % 16; // The last line is the first line
+        drawCharAt(x, y, *p);
+        //DEBUG_PRINTF(" %02x", *p);
+      }
+      //DEBUG_PRINTF("\n");
+    }
+    show();
+  }
 };
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
@@ -217,76 +273,34 @@ public:
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
-// Nascom memory
-class NascomMemory {
-	uint8_t *mem;
+// Nascom IO logic
+class NascomIo {
 public:
-  NascomMemory(uint8_t *mem) : mem(mem) {}
-	uint8_t *getMemPtr() {
-		return mem;
-	}
-	bool nasFileLoad(const char *fileName) {
-		uint16_t addr;
-		File     file = LittleFS.open(fileName, "r");
-		uint32_t numBytes = 0;
-		if (!file) {
-			DEBUG_PRINTF("Cannot open: %s\n", fileName);
-			return false;
-		}
-		DEBUG_PRINTF("Loading %s\n", fileName);
-		const size_t bufSize = 100;
-		char buffer[bufSize];
-		while (file.available()) {
-			size_t l = file.readBytesUntil('\n', buffer, bufSize-1);
-			buffer[l] = 0;
-			if (buffer[0] == '.') {
-				break;
-			}
-			char *p = buffer;
-			addr  = strtoul(p, &p, 16);
-			// DEBUG_PRINTF("%04x:", addr);
-			for (uint8_t b = 0; b < 8; b++) {
-				uint8_t byte = strtoul(p, &p, 16);
-				mem[addr+b] = byte;
-				if (addr + b == 0) {
-				  mem[0x10000] = mem[0]; // make getWord(0xffff) work correctly
-				}
-				// DEBUG_PRINTF(" %02x", byte);
-			}
-			// DEBUG_PRINTF("\n");
-			numBytes += 8;
-		}
-		file.close();
-		DEBUG_PRINTF("%d (%04x) bytes loaded\n", numBytes, numBytes);
-		return true;
+  uint8_t in(uint32_t port) {
+		//DEBUG_PRINTF("in(%d) called\n", port);
+		if (port == 0)
+		  return 0xff;
+		else
+		  return 0;
+  }
+	void out(uint32_t port, uint8_t value) {
+		//DEBUG_PRINTF("out(%d, %d) called \n", port, value);
 	}
 };
-
-static void updateDisplay(NascomDisplay &display, NascomMemory &memory) {
-	//DEBUG_PRINTF("Display Memory:\n");
-	uint8_t *ram = memory.getMemPtr();
-	for (uint8_t *p0 = ram + 0x80A;
-			 p0 < ram + 0xC00;
-			 p0 += 64) {
-		//DEBUG_PRINTF("%04x:", p0 - ram);
-		for (uint8_t *p = p0;
-		     p < p0 + 48;
-				 ++p) {
-			uint32_t index = p - ram - 0x800;
-			uint32_t x     = index % 64 - 10;
-			uint32_t y     = index / 64;
-			y = (y + 1) % 16; // The last line is the first line
-			display.drawCharAt(x, y, *p);
-			//DEBUG_PRINTF(" %02x", *p);
-		}
-		//DEBUG_PRINTF("\n");
-	}
-	display.show();
-}
 
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
 NascomMemory    nascomMemory(z80::ram);
+NascomIo        nascomIo;
+
+namespace z80 {
+	int in(uint32_t port) {
+    return nascomIo.in(port);
+	}
+	void out(uint32_t port, uint8_t value) {
+    nascomIo.out(port, value);
+	}
+}
 
 static int simAction() {
 #if 0	
@@ -306,7 +320,7 @@ static int simAction() {
 		start = now;
 		count = 0;
 	}
-	updateDisplay(nascomDisplay, nascomMemory);
+	nascomDisplay.updateFromMemory(nascomMemory);
 #endif
 	return 0;
 }
