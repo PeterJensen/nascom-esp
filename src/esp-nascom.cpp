@@ -161,6 +161,7 @@ public:
 class NascomKeyboardMap {
 	static const uint32_t mapSize = 8;
 	uint8_t map[mapSize];
+	uint8_t mapSnapshot[mapSize];
 	static constexpr char encoding[mapSize][9] = {
 		/* 0 */  "_\t@__-\r\010",
 		/* 1 */  "__TXF5BH",
@@ -171,6 +172,7 @@ class NascomKeyboardMap {
 		/* 6 */  "_[P120/:",
 		/* 7 */  "_]R C4VG",
 		};
+	uint32_t mapIndex = 0;
 
 	void set(uint8_t row, uint8_t col, bool down) {
 		if (down)
@@ -221,6 +223,21 @@ public:
 		set(row, col, down);
 	}
   
+	void rewind() {
+		mapIndex = 0;
+		memcpy(mapSnapshot, map, mapSize);
+	}
+
+	void step() {
+		mapIndex += 1;
+		if (mapIndex == mapSize)
+		  rewind();
+	}
+
+	uint8_t current() {
+		return mapSnapshot[mapIndex];
+	}
+
 	void dump() {
 		for (uint8_t row = 0; row < mapSize; row++) {
 			uint8_t rowValue = map[row];
@@ -267,15 +284,15 @@ class NascomKeyboard {
 			int asc = self->keyboard.virtualKeyToASCII(*vk);
 			if (down) {
 				if (asc != -1) {
-					self->display.putChar(asc);
-					self->display.drawCharAt(0, 0, asc);
+					//self->display.putChar(asc);
+					//self->display.drawCharAt(0, 0, asc);
 				}
 			}
   		mapUpdated = self->map.setAsciiChar(asc, down);
 		}
 		if (mapUpdated) {
-			DEBUG_PRINTF("Nascom Keyboard Map\n");
-			self->map.dump();
+			//DEBUG_PRINTF("Nascom Keyboard Map\n");
+			//self->map.dump();
 		}
 	}
 public:
@@ -289,28 +306,121 @@ public:
 	fabgl::Keyboard &getKeyboard() {
 		return keyboard;
 	}
+	void mapRewind() {
+		map.rewind();
+	}
+	void mapStep() {
+		map.step();
+	}
+	uint8_t mapCurrent() {
+		return map.current();
+	}
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
 // Nascom IO logic
 class NascomIo {
+  // Port0 Out/In bits
+	// -----------------
+  //   Bit  Out                        In
+  //   7:   ??                         ??
+  //   6:   ??                         Keyboard S6
+  //   5:   ??                         Keyboard S3
+  //   4:   Tape LED                   Keyboard S5
+  //   3:   Single step                Keyboard S4
+  //   2:   ??                         Keyboard S0
+  //   1:   Keyboard index reset       Keyboard S2
+  //   0:   Keyboard index increment   Keyboard S1
+  #define P0_OUT_KEYBOARD_RESET     1 << 1
+  #define P0_OUT_KEYBOARD_INCREMENT 1 << 0
+	NascomKeyboard &keyboard;
+	uint8_t        p0LastValue;
 public:
+  NascomIo(NascomKeyboard &keyboard) : keyboard(keyboard), p0LastValue(0) {}
   uint8_t in(uint32_t port) {
 		//DEBUG_PRINTF("in(%d) called\n", port);
-		if (port == 0)
-		  return 0xff;
-		else
-		  return 0;
+		switch (port) {
+			case 0: {
+			  uint8_t val = keyboard.mapCurrent();
+				return ~keyboard.mapCurrent();
+			}
+			default:
+			  return 0;
+		}
   }
 	void out(uint32_t port, uint8_t value) {
 		//DEBUG_PRINTF("out(%d, %d) called \n", port, value);
+		switch (port) {
+		  case 0: {
+				uint8_t zero2One = ~p0LastValue & value;
+				if ((value & P0_OUT_KEYBOARD_RESET) != 0) {
+					keyboard.mapRewind();
+				}
+				else if ((zero2One & P0_OUT_KEYBOARD_INCREMENT) != 0) {
+					//DEBUG_PRINTF("out(0): value: %02x, zero2One: %02x\n", value, zero2One);
+					keyboard.mapStep();
+				}
+				p0LastValue = value;
+				break;
+			}
+			default:
+				break;
+		}
 	}
 };
+
+class NascomCpu {
+	#define Z80_FREQUENCY              4000000
+	#define UI_REFRESH_RATE            30
+	#define ESTIMATED_CYCLES_PER_INSN  8
+	#define INSN_PER_REFRESH           Z80_FREQUENCY/UI_REFRESH_RATE/ESTIMATED_CYCLES_PER_INSN
+
+  NascomDisplay &display;
+	NascomMemory  &memory;
+
+  static NascomCpu *self;
+
+	static int simAction() {
+		static uint32_t count   = 0;
+		static uint32_t start   = millis();
+		static uint32_t delayMs = 25;
+		count++;
+		if (count == UI_REFRESH_RATE) {
+			int32_t now = millis();
+			DEBUG_PRINTF("simAction called 60 times: %.3f. delayMs: %d\n", ((float)(now - start))/1000, delayMs);
+			if (now - start > 1000) {
+				uint32_t adjust = (now - start - 1000)/UI_REFRESH_RATE;
+				if (adjust > delayMs)
+					delayMs = delayMs >> 1;
+				else
+					delayMs = delayMs - adjust;	
+			}
+			else {
+				delayMs = delayMs + (1000 - (now - start))/UI_REFRESH_RATE;
+			}
+			start = now;
+			count = 0;
+		}
+		self->display.updateFromMemory(self->memory);
+		delay(delayMs);
+		return 0;
+	}
+
+public:
+  NascomCpu(NascomDisplay &display, NascomMemory &memory) : display(display), memory(memory) {
+		self = this;
+	}
+  void run() {
+  	z80::simz80(0, INSN_PER_REFRESH, simAction);
+	}
+};
+NascomCpu *NascomCpu::self = nullptr;
 
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
 NascomMemory    nascomMemory(z80::ram);
-NascomIo        nascomIo;
+NascomIo        nascomIo(nascomKeyboard);
+NascomCpu       nascomCpu(nascomDisplay, nascomMemory);
 
 namespace z80 {
 	int in(uint32_t port) {
@@ -319,29 +429,6 @@ namespace z80 {
 	void out(uint32_t port, uint8_t value) {
     nascomIo.out(port, value);
 	}
-}
-
-static int simAction() {
-#if 0	
-	static uint32_t count = 0;
-	if (count == 60) {
-		DEBUG_PRINTF("simAction called: pc = %04x, sp = %04x\n", z80::pc, z80::sp);
-		updateDisplay(nascomDisplay, nascomMemory);
-	}
-	count++;
-#else
-	static uint32_t count = 0;
-	static int32_t start = 0;
-  count++;
-  if (count == 60) {
-		int32_t now = millis();
-		DEBUG_PRINTF("simAction called 60 times: %.3f\n", ((float)(now - start))/1000);
-		start = now;
-		count = 0;
-	}
-	nascomDisplay.updateFromMemory(nascomMemory);
-#endif
-	return 0;
 }
 
 void setup() {
@@ -361,7 +448,9 @@ void setup() {
 	nascomKeyboard.init();
 	nascomMemory.nasFileLoad("/nassys3.nal");
 	nascomMemory.nasFileLoad("/basic.nal");
-	z80::simz80(0, 27712, simAction);
+	nascomMemory.nasFileLoad("/skakur.nas");
+	nascomMemory.nasFileLoad("/BLS-maanelander.nas");
+	nascomCpu.run();
 	DEBUG_PRINTF("pc = %04x, sp = %04x\n", z80::pc, z80::sp);
 }
 
