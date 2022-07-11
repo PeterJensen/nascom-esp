@@ -159,9 +159,24 @@ public:
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
+  #define NK_MAKE(row, col) ((row) << 3 | (col))
+  #define NK_ROW(key)       (((key) & 0x38) >> 3)
+  #define NK_COL(key)       ((key) & 0x07)
+  #define NK_NONE           NK_MAKE(7, 7)
+  #define NK_UP             NK_MAKE(1, 6)
+  #define NK_DOWN           NK_MAKE(3, 6)
+  #define NK_LEFT           NK_MAKE(2, 6)
+  #define NK_RIGHT          NK_MAKE(4, 6)
+  #define NK_SHIFT          NK_MAKE(0, 4)
+  #define NK_CTRL           NK_MAKE(0, 3)
+  #define NK_GRAPH          NK_MAKE(5, 6)
+
   static const uint32_t mapSize = 8;
-  uint8_t map[mapSize];
-  uint8_t mapSnapshot[mapSize];
+  uint8_t               map[mapSize];
+  uint8_t               mapSnapshot[mapSize];
+  bool                  mapIsUpdating = false;
+  TaskHandle_t          mainTaskId;
+
   static constexpr char encoding[mapSize][9] = {
     /* 0 */  "_\t@__-\r\010",
     /* 1 */  "__TXF5BH",
@@ -181,51 +196,100 @@ class NascomKeyboardMap {
       map[row] &= ~(1 << col);
   }
 
-public:
-  #define NK_MAKE(row, col) ((row) << 3 | (col))
-  #define NK_ROW(key)       (((key) & 0x38) >> 3)
-  #define NK_COL(key)       ((key) & 0x07)
-  #define NK_NONE           0
-  #define NK_UP             NK_MAKE(1, 6)
-  #define NK_DOWN           NK_MAKE(3, 6)
-  #define NK_LEFT           NK_MAKE(2, 6)
-  #define NK_RIGHT          NK_MAKE(4, 6)
-  #define NK_SHIFT          NK_MAKE(0, 4)
+  uint8_t getNk(uint8_t ascChar) {
+    if (ascChar == '_') {
+      // '_' is used as an 'unknown'
+      return NK_NONE;
+    }
+    for (uint32_t row = 0; row < mapSize; row++) {
+      for (uint32_t col = 0; col < 7; col++) {
+        if (encoding[row][7-col] == ascChar) {
+          return NK_MAKE(row, col);
+        }
+      }
+    }
+    return NK_NONE;
+  }
 
+  #define ___ " " // Dummy
+  static constexpr const char *keys       = ";" ":" "["  "]" "-" "," "." "/" "0" "1" "2"  "3" "4" "5" "6" "7" "8" "9" " ";
+  static constexpr const char *keysShift  = "+" "*" "\\" "_" "=" "<" ">" "?" "^" "!" "\"" "#" "$" "%" "&" "'" "(" ")" ___;
+
+  uint8_t getNascomKey(uint8_t ascChar, bool *needShift, bool *needCtrl, bool *needGraph) {
+    *needShift = false;
+    *needCtrl  = false;
+    *needGraph = false;
+    // Handle upper/lower case letters.
+    // Lowercase should be mapped to uppercase and vice versa
+    if (isupper(ascChar) || ascChar == '@') {
+      // for some reason '@' requires SHIFT
+      *needShift = true;
+      return getNk(ascChar);
+    }
+    else if (islower(ascChar)) {
+      return getNk(toupper(ascChar));
+    }
+
+    // Check if ascChar is in the keyboard map
+    uint8_t nk = getNk(ascChar);
+    if (nk != NK_NONE) {
+      return nk;
+    }
+    // Check if ascChar is in the set of chars that must be shifted and remapped
+    for (uint32_t i = 0; keysShift[i] != 0; i++) {
+      if (keysShift[i] == ascChar) {
+        *needShift = true;
+        return getNk(keys[i]);
+      }
+    }
+    return NK_NONE;
+  }
+
+public:
+  NascomKeyboardMap() {
+    mainTaskId = xTaskGetCurrentTaskHandle();
+  }
   void reset() {
     memset(map, 0, sizeof(map));
   }
 
-  uint8_t encodeAscii(uint8_t ascChar) {
-    return NK_NONE;
-  }
-
   bool setAsciiChar(uint8_t ascChar, bool down) {
-    uint8_t ascCharUpper = toupper(ascChar);
-    bool    found = false;
-    for (uint32_t row = 0; row < mapSize && !found; row++) {
-      for (uint32_t col = 0; col < 7 && !found; col++) {
-        if (encoding[row][7-col] == ascCharUpper) {
-          set(row, col, down);
-          found = true;
-        }
+
+    bool    needShift;
+    bool    needCtrl;
+    bool    needGraph;
+    uint8_t nk = getNascomKey(ascChar, &needShift, &needCtrl, &needGraph);
+
+    DEBUG_PRINTF("nk: %02x (%d, %d) %s %s %s\n", nk, NK_ROW(nk), NK_COL(nk), needShift ? "SHIFT" : "", needCtrl ? "CTRL" : "", needGraph ? "GRAPH" : "");
+    if (nk != NK_NONE) {
+      mapIsUpdating = true;
+      vTaskSuspend(mainTaskId);
+      setKey(nk, down);
+      if (needShift) {
+        setKey(NK_SHIFT, down);
       }
+      if (needCtrl) {
+        setKey(NK_CTRL, down);
+      }
+      if (needGraph) {
+        setKey(NK_GRAPH, down);
+      }
+      vTaskResume(mainTaskId);
+      mapIsUpdating = false;
+      return true;
     }
-    if (found && isupper(ascChar)) {
-      setKey(NK_SHIFT, down);
-    }
-    return found;
+    return false;
   }
 
   void setKey(uint8_t key, bool down) {
-    uint8_t row = NK_ROW(key);
-    uint8_t col = NK_COL(key);
-    set(row, col, down);
+    set(NK_ROW(key), NK_COL(key), down);
   }
   
   void rewind() {
     mapIndex = 0;
-    memcpy(mapSnapshot, map, mapSize);
+    if (!mapIsUpdating) {
+      memcpy(mapSnapshot, map, mapSize);
+    }
   }
 
   void step() {
@@ -236,6 +300,10 @@ public:
 
   uint8_t current() {
     return mapSnapshot[mapIndex];
+  }
+
+  uint32_t getMapIndex() {
+    return mapIndex;
   }
 
   void dump() {
@@ -259,40 +327,36 @@ class NascomKeyboard {
   NascomKeyboardMap      map;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
-    bool mapUpdated = false;
+    DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
+    bool mapUpdated = true;
+    // Handle special non-ascii characters
     switch (*vk) {
       case fabgl::VK_UP:
         self->map.setKey(NK_UP, down);
-        mapUpdated = true;
         break;
       case fabgl::VK_DOWN:
         self->map.setKey(NK_DOWN, down);
-        mapUpdated = true;
         break;
       case fabgl::VK_LEFT:
         self->map.setKey(NK_LEFT, down);
-        mapUpdated = true;
         break;
       case fabgl::VK_RIGHT:
         self->map.setKey(NK_RIGHT, down);
-        mapUpdated = true;
         break;
       default:
+        mapUpdated = false;
         break;
     }
+    // Handle ascii characters
     if (!mapUpdated) {
       int asc = self->keyboard.virtualKeyToASCII(*vk);
-      if (down) {
-        if (asc != -1) {
-          //self->display.putChar(asc);
-          //self->display.drawCharAt(0, 0, asc);
-        }
-      }
-      mapUpdated = self->map.setAsciiChar(asc, down);
+      //DEBUG_PRINTF("0x%02x\n", asc);
+      if (asc != -1)
+        mapUpdated = self->map.setAsciiChar(asc, down);
     }
     if (mapUpdated) {
-      //DEBUG_PRINTF("Nascom Keyboard Map\n");
-      //self->map.dump();
+      DEBUG_PRINTF("Nascom Keyboard Map\n");
+      self->map.dump();
     }
   }
 public:
@@ -314,6 +378,10 @@ public:
   }
   uint8_t mapCurrent() {
     return map.current();
+  }
+
+  uint32_t mapGetIndex() {
+    return map.getMapIndex();
   }
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
@@ -342,7 +410,11 @@ public:
     switch (port) {
       case 0: {
         uint8_t val = keyboard.mapCurrent();
-        return ~keyboard.mapCurrent();
+//        if ((val & 0x14) != 0) {
+//          uint8_t index = keyboard.mapGetIndex();
+//          DEBUG_PRINTF("in(0) -> %02x (index:%d)\n", val, index);
+//        }
+        return ~val;
       }
       default:
         return 0;
@@ -387,7 +459,7 @@ class NascomCpu {
     count++;
     if (count == UI_REFRESH_RATE) {
       int32_t now = millis();
-      DEBUG_PRINTF("simAction called 60 times: %.3f. delayMs: %d\n", ((float)(now - start))/1000, delayMs);
+      //DEBUG_PRINTF("simAction called %d times: %.3f. delayMs: %d\n", UI_REFRESH_RATE, ((float)(now - start))/1000, delayMs);
       if (now - start > 1000) {
         uint32_t adjust = (now - start - 1000)/UI_REFRESH_RATE;
         if (adjust > delayMs)
@@ -455,5 +527,6 @@ void setup() {
 }
 
 void loop() {
+  // Should never get here
   vTaskSuspend(NULL);
 }
