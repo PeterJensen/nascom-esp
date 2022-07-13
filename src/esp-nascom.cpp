@@ -159,9 +159,20 @@ public:
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
+  // Encoding: csrrrccc
+  // c   = CTRL
+  // s   = SHIFT
+  // rrr = row
+  // ccc = col
   #define NK_MAKE(row, col) ((row) << 3 | (col))
   #define NK_ROW(key)       (((key) & 0x38) >> 3)
   #define NK_COL(key)       ((key) & 0x07)
+  #define NK_SHIFT_MASK     0x40
+  #define NK_CTRL_MASK      0x80
+  #define NK_BASE(key)      ((key) & 0x3f)
+  #define NK_HAS_SHIFT(key) (((key) & NK_SHIFT_MASK) != 0)
+  #define NK_HAS_CTRL(key)  (((key) & NK_CTRL_MASK) != 0)
+
   #define NK_NONE           NK_MAKE(7, 7)
   #define NK_UP             NK_MAKE(1, 6)
   #define NK_DOWN           NK_MAKE(3, 6)
@@ -170,7 +181,34 @@ class NascomKeyboardMap {
   #define NK_SHIFT          NK_MAKE(0, 4)
   #define NK_CTRL           NK_MAKE(0, 3)
   #define NK_GRAPH          NK_MAKE(5, 6)
-
+  #define NK_SPACE          NK_MAKE(7, 4)
+  #define NK_A              NK_MAKE(4, 4)
+  #define NK_B              NK_MAKE(1, 1)
+  #define NK_C              NK_MAKE(7, 3)
+  #define NK_D              NK_MAKE(2, 3)
+  #define NK_E              NK_MAKE(3, 3)
+  #define NK_F              NK_MAKE(1, 3)
+  #define NK_G              NK_MAKE(7, 0)
+  #define NK_H              NK_MAKE(1, 0)
+  #define NK_I              NK_MAKE(4, 5)
+  #define NK_J              NK_MAKE(2, 0)
+  #define NK_K              NK_MAKE(3, 0)
+  #define NK_L              NK_MAKE(4, 0)
+  #define NK_M              NK_MAKE(3, 1)
+  #define NK_N              NK_MAKE(2, 1)
+  #define NK_O              NK_MAKE(5, 5)
+  #define NK_P              NK_MAKE(6, 5)
+  #define NK_Q              NK_MAKE(5, 4)
+  #define NK_R              NK_MAKE(7, 5)
+  #define NK_S              NK_MAKE(3, 4)
+  #define NK_T              NK_MAKE(1, 5)
+  #define NK_U              NK_MAKE(3, 5)
+  #define NK_V              NK_MAKE(7, 1)
+  #define NK_W              NK_MAKE(4, 3)
+  #define NK_X              NK_MAKE(1, 4)
+  #define NK_Y              NK_MAKE(2, 5)
+  #define NK_Z              NK_MAKE(2, 4)
+  
   static const uint32_t mapSize = 8;
   uint8_t               map[mapSize];
   uint8_t               mapSnapshot[mapSize];
@@ -178,14 +216,15 @@ class NascomKeyboardMap {
   TaskHandle_t          mainTaskId;
 
   static constexpr char encoding[mapSize][9] = {
-    /* 0 */  "_\t@__-\r\010",
-    /* 1 */  "__TXF5BH",
-    /* 2 */  "__YZD6NJ",
-    /* 3 */  "__USE7MK",
-    /* 4 */  "__IAW8,L",
-    /* 5 */  "__OQ39.;",
-    /* 6 */  "_[P120/:",
-    /* 7 */  "_]R C4VG",
+    /*        _   6    5   4   3   2   1    0 */
+    /* 0 */  "_" "\t" "@" "_" "_" "-" "\r" "\010",
+    /* 1 */  "_" "_"  "T" "X" "F" "5" "B"  "H",
+    /* 2 */  "_" "_"  "Y" "Z" "D" "6" "N"  "J",
+    /* 3 */  "_" "_"  "U" "S" "E" "7" "M"  "K",
+    /* 4 */  "_" "_"  "I" "A" "W" "8" ","  "L",
+    /* 5 */  "_" "_"  "O" "Q" "3" "9" "."  ";",
+    /* 6 */  "_" "["  "P" "1" "2" "0" "/"  ":",
+    /* 7 */  "_" "]"  "R" " " "C" "4" "V"  "G",
     };
   uint32_t mapIndex = 0;
 
@@ -212,19 +251,27 @@ class NascomKeyboardMap {
   }
 
   #define ___ " " // Dummy
-  static constexpr const char *keys       = ";" ":" "["  "]" "-" "," "." "/" "0" "1" "2"  "3" "4" "5" "6" "7" "8" "9" " ";
-  static constexpr const char *keysShift  = "+" "*" "\\" "_" "=" "<" ">" "?" "^" "!" "\"" "#" "$" "%" "&" "'" "(" ")" ___;
+  static constexpr const char *keys          = ";" ":" "["    "]" "-" "," "." "/"    "0" "1" "2"  "3" "4" "5" "6" "7" "8" "9" " ";
+  static constexpr const char *keysShift     = "+" "*" "\\"   "_" "=" "<" ">" "?"    "^" "!" "\"" "#" "$" "%" "&" "'" "(" ")" ___;
+  static constexpr const char *keysCtrl      = "{" ___ "\033" ___ ___ ___ ___ ___    ___ ___ ___  ___ ___ ___ ___ ___ ___ ___ "`";
+  static constexpr const char *keysShiftCtrl = ___ ___ ___    ___ "}" "|" "~" "\177" ___ ___ ___  ___ ___ ___ ___ ___ ___ ___ ___;
 
-  uint8_t getNascomKey(uint8_t ascChar, bool *needShift, bool *needCtrl, bool *needGraph) {
-    *needShift = false;
-    *needCtrl  = false;
-    *needGraph = false;
+  static constexpr const uint8_t ascNkMap[27] = {
+    NK_SPACE|NK_CTRL_MASK, NK_A|NK_CTRL_MASK, NK_B|NK_CTRL_MASK, NK_C|NK_CTRL_MASK, //  0 -  3
+    NK_D|NK_CTRL_MASK,     NK_E|NK_CTRL_MASK, NK_F|NK_CTRL_MASK, NK_G|NK_CTRL_MASK, //  4 -  7
+    NK_H|NK_CTRL_MASK,     NK_I|NK_CTRL_MASK, NK_J|NK_CTRL_MASK, NK_K|NK_CTRL_MASK, //  8 - 11
+    NK_L|NK_CTRL_MASK,     NK_M|NK_CTRL_MASK, NK_N|NK_CTRL_MASK, NK_O|NK_CTRL_MASK, // 12 - 15
+    NK_P|NK_CTRL_MASK,     NK_Q|NK_CTRL_MASK, NK_R|NK_CTRL_MASK, NK_S|NK_CTRL_MASK, // 16 - 19
+    NK_T|NK_CTRL_MASK,     NK_U|NK_CTRL_MASK, NK_V|NK_CTRL_MASK, NK_W|NK_CTRL_MASK, // 20 - 23
+    NK_X|NK_CTRL_MASK,     NK_Y|NK_CTRL_MASK, NK_Z|NK_CTRL_MASK                     // 24 - 26
+  };
+
+  uint8_t getNascomKey(uint8_t ascChar) {
     // Handle upper/lower case letters.
     // Lowercase should be mapped to uppercase and vice versa
     if (isupper(ascChar) || ascChar == '@') {
       // for some reason '@' requires SHIFT
-      *needShift = true;
-      return getNk(ascChar);
+      return getNk(ascChar) | NK_SHIFT_MASK;
     }
     else if (islower(ascChar)) {
       return getNk(toupper(ascChar));
@@ -235,12 +282,26 @@ class NascomKeyboardMap {
     if (nk != NK_NONE) {
       return nk;
     }
-    // Check if ascChar is in the set of chars that must be shifted and remapped
+    // Check if ascChar is in the set of chars that must use SHIFT and be remapped
     for (uint32_t i = 0; keysShift[i] != 0; i++) {
       if (keysShift[i] == ascChar) {
-        *needShift = true;
-        return getNk(keys[i]);
+        return getNk(keys[i]) | NK_SHIFT_MASK;
       }
+    }
+    // Check if ascChar is in the set of chars that must use CTRL and be remapped
+    for (uint32_t i = 0; keysCtrl[i] != 0; i++) {
+      if (keysCtrl[i] == ascChar) {
+        return getNk(keys[i]) | NK_CTRL_MASK;
+      }
+    }
+    // Check if ascChar is in the set of chars that must use SHIFT+CTRL and be remapped
+    for (uint32_t i = 0; keysShiftCtrl[i] != 0; i++) {
+      if (keysShiftCtrl[i] == ascChar) {
+        return getNk(keys[i]) | NK_SHIFT_MASK | NK_CTRL_MASK;
+      }
+    }
+    if (ascChar < 27) {
+      return ascNkMap[ascChar];
     }
     return NK_NONE;
   }
@@ -255,26 +316,18 @@ public:
 
   bool setAsciiChar(uint8_t ascChar, bool down) {
 
-    bool    needShift;
-    bool    needCtrl;
-    bool    needGraph;
-    uint8_t nk = getNascomKey(ascChar, &needShift, &needCtrl, &needGraph);
+    uint8_t nk = getNascomKey(ascChar);
 
-    DEBUG_PRINTF("nk: %02x (%d, %d) %s %s %s\n", nk, NK_ROW(nk), NK_COL(nk), needShift ? "SHIFT" : "", needCtrl ? "CTRL" : "", needGraph ? "GRAPH" : "");
+    DEBUG_PRINTF("nk: %02x (%d, %d) %s %s\n", nk, NK_ROW(nk), NK_COL(nk), NK_HAS_SHIFT(nk) ? "SHIFT" : "", NK_HAS_CTRL(nk) ? "CTRL" : "");
     if (nk != NK_NONE) {
       mapIsUpdating = true;
-      vTaskSuspend(mainTaskId);
-      setKey(nk, down);
-      if (needShift) {
+      if (NK_HAS_SHIFT(nk)) {
         setKey(NK_SHIFT, down);
       }
-      if (needCtrl) {
+      if (NK_HAS_CTRL(nk)) {
         setKey(NK_CTRL, down);
       }
-      if (needGraph) {
-        setKey(NK_GRAPH, down);
-      }
-      vTaskResume(mainTaskId);
+      setKey(nk, down);
       mapIsUpdating = false;
       return true;
     }
@@ -295,7 +348,7 @@ public:
   void step() {
     mapIndex += 1;
     if (mapIndex == mapSize)
-      rewind();
+      mapIndex = 0;
   }
 
   uint8_t current() {
@@ -319,6 +372,7 @@ public:
   }
 };
 constexpr char NascomKeyboardMap::encoding[mapSize][9];
+constexpr uint8_t NascomKeyboardMap::ascNkMap[27];
 
 // Nascom keyboard
 class NascomKeyboard {
@@ -350,13 +404,13 @@ class NascomKeyboard {
     // Handle ascii characters
     if (!mapUpdated) {
       int asc = self->keyboard.virtualKeyToASCII(*vk);
-      //DEBUG_PRINTF("0x%02x\n", asc);
+      DEBUG_PRINTF("ASCII: 0x%02x\n", asc);
       if (asc != -1)
         mapUpdated = self->map.setAsciiChar(asc, down);
     }
     if (mapUpdated) {
-      DEBUG_PRINTF("Nascom Keyboard Map\n");
-      self->map.dump();
+      //DEBUG_PRINTF("Nascom Keyboard Map\n");
+      //self->map.dump();
     }
   }
 public:
