@@ -1,5 +1,6 @@
 // Author: Peter Jensen
 
+$fn = 50;
 x = 0; y = 1; z = 2;
 
 esp32Dims           = [51.6, 28.2, 4.7];
@@ -17,8 +18,9 @@ componentsDims      = [esp32Dims[x] + (sdDims[x] - esp32Dims[x])/2 - sdOffsets[x
 boxOuterDims        = [componentsDims[x], componentsDims[y] + 6, componentsDims[z] + 10];
 boxWall             = 2;
 boxInnerDims        = [boxOuterDims[x] - 2*boxWall, boxOuterDims[y] - 2*boxWall, boxOuterDims[z] - 2*boxWall];
-
 componentsOffsets   = [componentsDims[x]/2 - esp32Dims[x]/2, 0, esp32Dims[z]/2 - boxInnerDims[z]/2];
+esp32HolesD         = 3;
+esp32HolesOffset    = [3 - esp32Dims[x]/2, 3 - esp32Dims[y]/2, -esp32Dims[z]/2];
 
 switch2BaseDims = [11.9, 11.9, 3.1];
 switch2StemD = 6.6;
@@ -67,8 +69,18 @@ module resetMount(cut = false, show = false) {
   }
 }
 
+module esp32Holes(d = esp32HolesD) {
+  translate(esp32HolesOffset)
+    cylinder(d=d, h=esp32Dims[z]);
+  translate([esp32HolesOffset[x], -esp32HolesOffset[y], esp32HolesOffset[z]])
+    cylinder(d=d, h=esp32Dims[z]);
+}
+
 module esp32() {
-  cube(esp32Dims, center=true);
+  difference() {
+    cube(esp32Dims, center=true);
+    esp32Holes();
+  }
 }
 
 module vga() {
@@ -120,29 +132,42 @@ module roundedBox(dims, radius) {
   }
 }
 
-module boxText(str) {
-  translate([0, -boxOuterDims[y]/2 + 0.5, 0])
-    rotate([90, 0, 0])
-      linear_extrude(height = 5)
-        text(str, font="Ariel:style=Bold", size=8, halign="center", valign="center", spacing=0.95);
+module boxText(str, size = 8) {
+  rotate([90, 0, 0])
+    linear_extrude(height = 5)
+      text(str, font="Ariel:style=Bold", size, halign="center", valign="center", spacing=0.95);
 }
 
+module nascomText() {
+  translate([0, -boxOuterDims[y]/2 + 0.5, 0])
+    boxText("NASCOM-2");
+}
+
+module madeByText() {
+  translate([0, -boxOuterDims[y]/2 + 0.5, -10])
+    boxText("Jury-rigged by: Peter Jensen", 3);
+}
+  
 module box() {
-  color([0.3, 0.5, 0.8, 1.0])
+  color([0.3, 0.5, 0.8, 1.0]) {
     difference() {    
       roundedBox(boxOuterDims, 4);
       cube(boxInnerDims, center=true);
-      boxText("NASCOM-2");
+      nascomText();
+      madeByText();
       components();
       translate([0, 0, boxOuterDims[z] - boxWall])
         cube(boxOuterDims, center=true);
     }
+    translate(componentsOffsets)
+      esp32Holes(esp32HolesD - 0.5);
+  }
 }
 
 module main() {
   box();
   //components();
-  resetMount();
+  //resetMount();
 }
 
 main();
