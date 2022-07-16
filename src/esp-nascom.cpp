@@ -35,6 +35,7 @@ public:
   static const gpio_num_t vsync    = GPIO_NUM_33;
   static const gpio_num_t kbdClock = GPIO_NUM_25;
   static const gpio_num_t kbdData  = GPIO_NUM_26;
+  static const gpio_num_t tapeLed  = GPIO_NUM_16;
 };
 
 // Nascom memory
@@ -182,6 +183,8 @@ class NascomKeyboardMap {
   #define NK_CTRL           NK_MAKE(0, 3)
   #define NK_GRAPH          NK_MAKE(5, 6)
   #define NK_SPACE          NK_MAKE(7, 4)
+  #define NK_0              NK_MAKE(6, 2)
+  #define NK_2              NK_MAKE(6, 3)
   #define NK_A              NK_MAKE(4, 4)
   #define NK_B              NK_MAKE(1, 1)
   #define NK_C              NK_MAKE(7, 3)
@@ -208,6 +211,8 @@ class NascomKeyboardMap {
   #define NK_X              NK_MAKE(1, 4)
   #define NK_Y              NK_MAKE(2, 5)
   #define NK_Z              NK_MAKE(2, 4)
+  #define NK_LEFTBRACKET    NK_MAKE(6, 6)
+  #define NK_RIGHTBRACKET   NK_MAKE(7, 6)
   
   static const uint32_t mapSize = 8;
   uint8_t               map[mapSize];
@@ -256,14 +261,15 @@ class NascomKeyboardMap {
   static constexpr const char *keysCtrl      = "{" ___ "\033" ___ ___ ___ ___ ___    ___ ___ ___  ___ ___ ___ ___ ___ ___ ___ "`";
   static constexpr const char *keysShiftCtrl = ___ ___ ___    ___ "}" "|" "~" "\177" ___ ___ ___  ___ ___ ___ ___ ___ ___ ___ ___;
 
-  static constexpr const uint8_t ascNkMap[27] = {
-    NK_SPACE|NK_CTRL_MASK, NK_A|NK_CTRL_MASK, NK_B|NK_CTRL_MASK, NK_C|NK_CTRL_MASK, //  0 -  3
-    NK_D|NK_CTRL_MASK,     NK_E|NK_CTRL_MASK, NK_F|NK_CTRL_MASK, NK_G|NK_CTRL_MASK, //  4 -  7
-    NK_H|NK_CTRL_MASK,     NK_I|NK_CTRL_MASK, NK_J|NK_CTRL_MASK, NK_K|NK_CTRL_MASK, //  8 - 11
-    NK_L|NK_CTRL_MASK,     NK_M|NK_CTRL_MASK, NK_N|NK_CTRL_MASK, NK_O|NK_CTRL_MASK, // 12 - 15
-    NK_P|NK_CTRL_MASK,     NK_Q|NK_CTRL_MASK, NK_R|NK_CTRL_MASK, NK_S|NK_CTRL_MASK, // 16 - 19
-    NK_T|NK_CTRL_MASK,     NK_U|NK_CTRL_MASK, NK_V|NK_CTRL_MASK, NK_W|NK_CTRL_MASK, // 20 - 23
-    NK_X|NK_CTRL_MASK,     NK_Y|NK_CTRL_MASK, NK_Z|NK_CTRL_MASK                     // 24 - 26
+  static constexpr const uint8_t ascNkMap[32] = {
+    NK_SPACE|NK_CTRL_MASK, NK_A|NK_CTRL_MASK, NK_B|NK_CTRL_MASK, NK_C|NK_CTRL_MASK,           //  0 -  3
+    NK_D|NK_CTRL_MASK,     NK_E|NK_CTRL_MASK, NK_F|NK_CTRL_MASK, NK_G|NK_CTRL_MASK,           //  4 -  7
+    NK_H|NK_CTRL_MASK,     NK_I|NK_CTRL_MASK, NK_J|NK_CTRL_MASK, NK_K|NK_CTRL_MASK,           //  8 - 11
+    NK_L|NK_CTRL_MASK,     NK_M|NK_CTRL_MASK, NK_N|NK_CTRL_MASK, NK_O|NK_CTRL_MASK,           // 12 - 15
+    NK_P|NK_CTRL_MASK,     NK_Q|NK_CTRL_MASK, NK_R|NK_CTRL_MASK, NK_S|NK_CTRL_MASK,           // 16 - 19
+    NK_T|NK_CTRL_MASK,     NK_U|NK_CTRL_MASK, NK_V|NK_CTRL_MASK, NK_W|NK_CTRL_MASK,           // 20 - 23
+    NK_X|NK_CTRL_MASK,     NK_Y|NK_CTRL_MASK, NK_Z|NK_CTRL_MASK, NK_LEFTBRACKET|NK_CTRL_MASK, // 24 - 27
+    NK_LEFTBRACKET|NK_SHIFT_MASK|NK_CTRL_MASK, NK_RIGHTBRACKET|NK_CTRL_MASK, NK_0|NK_SHIFT_MASK|NK_CTRL_MASK, NK_RIGHTBRACKET|NK_SHIFT_MASK|NK_CTRL_MASK // 28 - 31
   };
 
   uint8_t getNascomKey(uint8_t ascChar) {
@@ -300,7 +306,7 @@ class NascomKeyboardMap {
         return getNk(keys[i]) | NK_SHIFT_MASK | NK_CTRL_MASK;
       }
     }
-    if (ascChar < 27) {
+    if (ascChar < 32) {
       return ascNkMap[ascChar];
     }
     return NK_NONE;
@@ -315,27 +321,29 @@ public:
   }
 
   bool setAsciiChar(uint8_t ascChar, bool down) {
-
     uint8_t nk = getNascomKey(ascChar);
-
     DEBUG_PRINTF("nk: %02x (%d, %d) %s %s\n", nk, NK_ROW(nk), NK_COL(nk), NK_HAS_SHIFT(nk) ? "SHIFT" : "", NK_HAS_CTRL(nk) ? "CTRL" : "");
     if (nk != NK_NONE) {
       mapIsUpdating = true;
-      if (NK_HAS_SHIFT(nk)) {
-        setKey(NK_SHIFT, down);
-      }
-      if (NK_HAS_CTRL(nk)) {
-        setKey(NK_CTRL, down);
-      }
-      setKey(nk, down);
+      setKeyAll(nk, down);
       mapIsUpdating = false;
       return true;
     }
     return false;
   }
 
-  void setKey(uint8_t key, bool down) {
-    set(NK_ROW(key), NK_COL(key), down);
+  void setKey(uint8_t nk, bool down) {
+    set(NK_ROW(nk), NK_COL(nk), down);
+  }
+
+  void setKeyAll(uint8_t nk, bool down) {
+    if (NK_HAS_SHIFT(nk)) {
+      setKey(NK_SHIFT, down);
+    }
+    if (NK_HAS_CTRL(nk)) {
+      setKey(NK_CTRL, down);
+    }
+    setKey(nk, down);
   }
   
   void rewind() {
@@ -372,30 +380,45 @@ public:
   }
 };
 constexpr char NascomKeyboardMap::encoding[mapSize][9];
-constexpr uint8_t NascomKeyboardMap::ascNkMap[27];
+constexpr uint8_t NascomKeyboardMap::ascNkMap[32];
 
 // Nascom keyboard
 class NascomKeyboard {
   fabgl::Keyboard        keyboard;
   NascomDisplay         &display;
   NascomKeyboardMap      map;
+  bool                   shiftDown = false;
+  bool                   ctrlDown  = false;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
+    uint8_t shiftCtrlMask = 0;
+    if (*vk == fabgl::VK_LSHIFT || *vk == fabgl::VK_RSHIFT) {
+      self->shiftDown = down;
+    }
+    if (*vk == fabgl::VK_LCTRL || *vk == fabgl::VK_RCTRL) {
+      self->ctrlDown = down;
+    }
+    if (self->shiftDown) {
+      shiftCtrlMask = NK_SHIFT_MASK;
+    }
+    if (self->ctrlDown) {
+      shiftCtrlMask |= NK_CTRL_MASK;
+    }
     bool mapUpdated = true;
     // Handle special non-ascii characters
     switch (*vk) {
       case fabgl::VK_UP:
-        self->map.setKey(NK_UP, down);
+        self->map.setKeyAll(NK_UP | shiftCtrlMask, down);
         break;
       case fabgl::VK_DOWN:
-        self->map.setKey(NK_DOWN, down);
+        self->map.setKeyAll(NK_DOWN | shiftCtrlMask, down);
         break;
       case fabgl::VK_LEFT:
-        self->map.setKey(NK_LEFT, down);
+        self->map.setKeyAll(NK_LEFT | shiftCtrlMask, down);
         break;
       case fabgl::VK_RIGHT:
-        self->map.setKey(NK_RIGHT, down);
+        self->map.setKeyAll(NK_RIGHT | shiftCtrlMask, down);
         break;
       default:
         mapUpdated = false;
@@ -440,6 +463,45 @@ public:
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
+class NascomTape {
+  bool tapeLed;
+  File inFile;
+  bool inFileIsOpen;
+public:
+  NascomTape() : tapeLed(false), inFileIsOpen(false) {}
+  void init() {
+    pinMode(Pins::tapeLed, OUTPUT);
+  }
+  void setLed(bool isOn) {
+    tapeLed = isOn;
+    digitalWrite(Pins::tapeLed, isOn ? HIGH : LOW);
+  }
+  bool getLed() {
+    return tapeLed;
+  }
+  void setOutputFile(const char *fileName) {
+  }
+  void setInputFile(const char *fileName) {
+    if (inFileIsOpen) {
+      inFile.close();
+    }
+    inFile = LittleFS.open(fileName, "r");
+    inFileIsOpen = true;
+  }
+  bool hasData() {
+    return inFileIsOpen;
+  }
+  uint8_t getByte() {
+    if (!inFileIsOpen) {
+      return 0;
+    }
+    if (!inFile.available()) {
+      inFile.seek(0);
+    }
+    return inFile.read();
+  }
+};
+
 // Nascom IO logic
 class NascomIo {
   // Port0 Out/In bits
@@ -453,22 +515,34 @@ class NascomIo {
   //   2:   ??                         Keyboard S0
   //   1:   Keyboard index reset       Keyboard S2
   //   0:   Keyboard index increment   Keyboard S1
-  #define P0_OUT_KEYBOARD_RESET     1 << 1
   #define P0_OUT_KEYBOARD_INCREMENT 1 << 0
+  #define P0_OUT_KEYBOARD_RESET     1 << 1
+  #define P0_OUT_TAPE_LED           1 << 4
+  #define P2_IN_UART_TBR_EMPTY      1 << 6
+  #define P2_IN_UART_DATA_READY     1 << 7
+
   NascomKeyboard &keyboard;
+  NascomTape     &tape;
   uint8_t        p0LastValue;
 public:
-  NascomIo(NascomKeyboard &keyboard) : keyboard(keyboard), p0LastValue(0) {}
+  NascomIo(NascomKeyboard &keyboard, NascomTape &tape) : keyboard(keyboard), tape(tape), p0LastValue(0) {}
   uint8_t in(uint32_t port) {
     //DEBUG_PRINTF("in(%d) called\n", port);
     switch (port) {
       case 0: {
         uint8_t val = keyboard.mapCurrent();
-//        if ((val & 0x14) != 0) {
-//          uint8_t index = keyboard.mapGetIndex();
-//          DEBUG_PRINTF("in(0) -> %02x (index:%d)\n", val, index);
-//        }
         return ~val;
+      }
+      case 1:
+        if (tape.hasData() && tape.getLed()) {
+          return tape.getByte();
+        }
+        else {
+          return 0;
+        }
+      case 2: {
+          // UART Status: Always ready to send data. Query tape object for input available
+          return P2_IN_UART_TBR_EMPTY | (tape.hasData() && tape.getLed() ? P2_IN_UART_DATA_READY : 0);
       }
       default:
         return 0;
@@ -486,6 +560,7 @@ public:
           //DEBUG_PRINTF("out(0): value: %02x, zero2One: %02x\n", value, zero2One);
           keyboard.mapStep();
         }
+        tape.setLed((value & P0_OUT_TAPE_LED) != 0);
         p0LastValue = value;
         break;
       }
@@ -545,7 +620,8 @@ NascomCpu *NascomCpu::self = nullptr;
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
 NascomMemory    nascomMemory(z80::ram);
-NascomIo        nascomIo(nascomKeyboard);
+NascomTape      nascomTape;
+NascomIo        nascomIo(nascomKeyboard, nascomTape);
 NascomCpu       nascomCpu(nascomDisplay, nascomMemory);
 
 namespace z80 {
@@ -570,12 +646,15 @@ void setup() {
     file.close();
   }
   dir.close();
+  nascomTape.init();
   nascomDisplay.init();
   nascomKeyboard.init();
+  nascomTape.setInputFile("/blspascal13.cas");
   nascomMemory.nasFileLoad("/nassys3.nal");
   nascomMemory.nasFileLoad("/basic.nal");
   nascomMemory.nasFileLoad("/skakur.nas");
   nascomMemory.nasFileLoad("/BLS-maanelander.nas");
+  nascomTape.setLed(false);
   nascomCpu.run();
   DEBUG_PRINTF("pc = %04x, sp = %04x\n", z80::pc, z80::sp);
 }
