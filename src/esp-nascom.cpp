@@ -5,6 +5,8 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <SD.h>
+#include <SPI.h>
 #include "ESP32Lib.h"
 #include "devdrivers/keyboard.h"
 #include "NascomFont.h"
@@ -29,13 +31,17 @@ namespace z80 {
 class Pins {
 public:
   static const gpio_num_t red      = GPIO_NUM_14;
-  static const gpio_num_t green    = GPIO_NUM_19;
+  static const gpio_num_t green    = GPIO_NUM_12;
   static const gpio_num_t blue     = GPIO_NUM_27;
   static const gpio_num_t hsync    = GPIO_NUM_32;
   static const gpio_num_t vsync    = GPIO_NUM_33;
   static const gpio_num_t kbdClock = GPIO_NUM_25;
   static const gpio_num_t kbdData  = GPIO_NUM_26;
   static const gpio_num_t tapeLed  = GPIO_NUM_16;
+  static const gpio_num_t sdSck    = GPIO_NUM_18;
+  static const gpio_num_t sdMiso   = GPIO_NUM_19;
+  static const gpio_num_t sdMosi   = GPIO_NUM_13;
+  static const gpio_num_t sdCs     = GPIO_NUM_5;
 };
 
 // Nascom memory
