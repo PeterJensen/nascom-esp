@@ -20,7 +20,9 @@ boxWall             = 2;
 boxInnerDims        = [boxOuterDims[x] - 2*boxWall, boxOuterDims[y] - 2*boxWall, boxOuterDims[z] - 2*boxWall];
 componentsOffsets   = [componentsDims[x]/2 - esp32Dims[x]/2, 0, esp32Dims[z]/2 - boxInnerDims[z]/2];
 esp32HolesD         = 3;
-esp32HolesOffset    = [3 - esp32Dims[x]/2, 3 - esp32Dims[y]/2, -esp32Dims[z]/2];
+esp32HolesOffset    = [2 - esp32Dims[x]/2, 2 - esp32Dims[y]/2, -esp32Dims[z]/2];
+vgaHolesD           = 3.3;
+vgaHolesOffsets     = [12.5, 0, 0];
 
 switch2BaseDims = [11.9, 11.9, 3.1];
 switch2StemD = 6.6;
@@ -83,9 +85,27 @@ module esp32() {
   }
 }
 
+module vgaHoles(d = vgaHolesD) {
+  module oneHole() {
+    h = vgaPlateDims[y] + 5;
+    translate([0, h/2, 0])
+      rotate([90, 0, 0])
+        cylinder(d = d, h = h);
+  }
+//  translate(vgaOffsets) {
+    translate(vgaHolesOffsets)
+      oneHole();
+    translate([-vgaHolesOffsets[x], vgaHolesOffsets[y], vgaHolesOffsets[z]])
+      oneHole();
+//  }
+}
+
 module vga() {
   translate(vgaOffsets) {
-    cube(vgaPlateDims, center=true);
+    difference() {
+      cube(vgaPlateDims, center=true);
+      vgaHoles();
+    }
     translate(vgaConnectorOffsets)
       cube(vgaConnectorDims, center=true);
   }
@@ -107,6 +127,8 @@ module components() {
     vga();
     usb();
     sd();
+    translate(vgaOffsets)
+      vgaHoles();
   }
 }
 
@@ -156,6 +178,8 @@ module box() {
       nascomText();
       madeByText();
       components();
+//      translate(vgaOffsets + componentsOffsets)
+//        vgaHoles();
       translate([0, 0, boxOuterDims[z] - boxWall])
         cube(boxOuterDims, center=true);
     }
