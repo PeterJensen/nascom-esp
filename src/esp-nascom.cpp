@@ -464,11 +464,15 @@ public:
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
 class NascomTape {
-  bool tapeLed;
+  bool tapeLed            = false;
+  const char *inFileName  = nullptr;
+  const char *outFileName = nullptr;
   File inFile;
-  bool inFileIsOpen;
+  File outFile;
+  bool inFileIsOpen       = false;
+  bool outFileIsOpen      = false;
 public:
-  NascomTape() : tapeLed(false), inFileIsOpen(false) {}
+//  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
   void init() {
     pinMode(Pins::tapeLed, OUTPUT);
   }
@@ -480,18 +484,38 @@ public:
     return tapeLed;
   }
   void setOutputFile(const char *fileName) {
+    outFileName = fileName;
   }
   void setInputFile(const char *fileName) {
+    inFileName = fileName;
     if (inFileIsOpen) {
       inFile.close();
     }
     inFile = LittleFS.open(fileName, "r");
     inFileIsOpen = true;
   }
-  bool hasData() {
-    return inFileIsOpen;
+  void openFiles() {
+    if (inFileName != nullptr) {
+      inFile = LittleFS.open(inFileName, "r");
+      inFileIsOpen = true;
+    }
+    if (outFileName != nullptr) {
+      outFile = LittleFS.open(outFileName, "w");
+      outFileIsOpen = true;
+    }
   }
-  uint8_t getByte() {
+  void closeFiles() {
+    if (inFileIsOpen) {
+      inFile.close();
+    }
+    if (outFileIsOpen) {
+      outFile.close();
+    }
+  }
+  bool hasData() {
+    return inFileIsOpen && inFile.available();
+  }
+  uint8_t readByte() {
     if (!inFileIsOpen) {
       return 0;
     }
@@ -499,6 +523,11 @@ public:
       inFile.seek(0);
     }
     return inFile.read();
+  }
+  void writeByte(uint8_t b) {
+    if (outFileIsOpen) {
+      outFile.write(b);
+    }
   }
 };
 
@@ -535,7 +564,7 @@ public:
       }
       case 1:
         if (tape.hasData() && tape.getLed()) {
-          return tape.getByte();
+          return tape.readByte();
         }
         else {
           return 0;
@@ -553,6 +582,7 @@ public:
     switch (port) {
       case 0: {
         uint8_t zero2One = ~p0LastValue & value;
+        uint8_t one2Zero = p0LastValue & ~value;
         if ((value & P0_OUT_KEYBOARD_RESET) != 0) {
           keyboard.mapRewind();
         }
@@ -560,10 +590,20 @@ public:
           //DEBUG_PRINTF("out(0): value: %02x, zero2One: %02x\n", value, zero2One);
           keyboard.mapStep();
         }
-        tape.setLed((value & P0_OUT_TAPE_LED) != 0);
+        if ((zero2One & P0_OUT_TAPE_LED) != 0) {
+          tape.setLed(true);
+          tape.openFiles();
+        }
+        if ((one2Zero & P0_OUT_TAPE_LED) != 0) {
+          tape.setLed(false);
+          tape.closeFiles();
+        }
         p0LastValue = value;
         break;
       }
+      case 1:
+        tape.writeByte(value);
+        break;
       default:
         break;
     }
@@ -650,6 +690,7 @@ void setup() {
   nascomDisplay.init();
   nascomKeyboard.init();
   nascomTape.setInputFile("/blspascal13.cas");
+  nascomTape.setOutputFile("/tape-out.cas");
   nascomMemory.nasFileLoad("/nassys3.nal");
   nascomMemory.nasFileLoad("/basic.nal");
   nascomMemory.nasFileLoad("/skakur.nas");
