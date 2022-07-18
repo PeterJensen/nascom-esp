@@ -3,7 +3,8 @@
 $fn = 50;
 x = 0; y = 1; z = 2;
 
-esp32Dims           = [51.6, 28.2, 4.7];
+//esp32Dims           = [51.6, 28.2, 4.7];
+esp32Dims           = [51.6, 28.2, 5.7];
 vgaPlateDims        = [30.8, 1.0, 12.4];
 vgaConnectorDims    = [16.2, 16.5, 10.7];
 vgaConnectorOffsets = [0, 6.2 - vgaConnectorDims[y]/2, 0];
@@ -24,13 +25,14 @@ esp32HolesOffset    = [2 - esp32Dims[x]/2, 2 - esp32Dims[y]/2, -esp32Dims[z]/2];
 vgaHolesD           = 3.3;
 vgaHolesOffsets     = [12.5, 0, 0];
 
-switch2BaseDims = [11.9, 11.9, 3.1];
-switch2StemD = 6.6;
-switch2StemH = 3.1;
-switch2TopD  = 12.9;
-switch2TopH  = 5.7;
-switch2Z     = switch2BaseDims[z] + switch2StemH + switch2TopH - 1;
-switchCylT = 0.5;
+// Reset switch/mount
+switch2BaseDims     = [11.9, 11.9, 3.1];
+switch2StemD        = 6.6;
+switch2StemH        = 3.1;
+switch2TopD         = 12.9;
+switch2TopH         = 5.7;
+switch2Z            = switch2BaseDims[z] + switch2StemH + switch2TopH - 1;
+switchCylT          = 0.5;
   
 module switch2() {
   translate([0, 0, switch2BaseDims[z]/2]) {
@@ -69,6 +71,32 @@ module resetMount(cut = false, show = false) {
     if (cut)
       cylinder(d = switch2CylD + 2*switchCylT, h = switch2CylZ);
   }
+}
+
+// Slots for top
+slotZ        = 2;
+slot1Dims    = [10, 2, 2];
+slot1Offsets = [0, boxInnerDims[y]/2 + slot1Dims[y]/2, boxInnerDims[z]/2 - slot1Dims[z]/2 - slotZ];
+
+slots2Dims    = [10, 1, 2];
+slots2Offsets = [0, -boxInnerDims[y]/2 - slots2Dims[y]/2, boxInnerDims[z]/2 - slots2Dims[z]/2 - slotZ];
+slots2Dist    = 30;
+
+module slot1() {
+  translate(slot1Offsets)
+    cube(slot1Dims, center = true);
+}
+
+module slots2() {
+  translate(slots2Offsets) {
+    translate([-slots2Dist/2, 0, 0]) cube(slots2Dims, center = true);
+    translate([slots2Dist/2, 0, 0]) cube(slots2Dims, center = true);
+  }
+}
+
+module slots() {
+  slot1();
+  slots2();
 }
 
 module esp32Holes(d = esp32HolesD) {
@@ -178,6 +206,7 @@ module box() {
       nascomText();
       madeByText();
       components();
+      slots();
 //      translate(vgaOffsets + componentsOffsets)
 //        vgaHoles();
       translate([0, 0, boxOuterDims[z] - boxWall])
