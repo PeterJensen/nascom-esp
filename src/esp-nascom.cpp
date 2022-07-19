@@ -5,22 +5,30 @@
 // The simulator uses a VGA display and a PS/2 keyboard.
 // The cassette tape is simulated with both the internal flash and an attached SD card reader.
 //
-// The PlatformIO/VS Code development environment was used for development.
+// PlatformIO/VS Code development environment was used for development.
 //
 // The project uses software from various sources:
 //
-// 1. Tommy Thorn's virtual-nascom: https://github.com/tommythorn/virtual-nascom
+// 1. Tommy Thorn's virtual-nascom: https://github.com/tommythorn/virtual-nascom:
 //    Nascom-2 keyboard simulation.  Original code is mostly rewritten, but the ideas are the same.
 //    Nascom-2 font definition.
-// 2. bitluni's ESP32Lib: https://github.com/bitluni/ESP32Lib
+// 2. bitluni's ESP32Lib: https://github.com/bitluni/ESP32Lib:
 //    VGA driver logic.  Made it work with the Nascom-2 font defintion from 1)
-// 3. Fabrizio Di Vittorio's FabGL: https://github.com/fdivitto/FabGL
+// 3. Fabrizio Di Vittorio's FabGL: https://github.com/fdivitto/FabGL:
 //    PS/2 keyboard handling.  This fabulous library does much more than just handling a PS/2
 //    keyboard.  It's also able to handle the VGA and Z80 CPU simulation, but those
 //    parts aren't used.
 // 4. Z80 emulator from Frank D. Cringle:
 //    There are many Z80 emulator's to choose from.  This is the one used by virtual-nascom, and
-//    I use it here as well, since it's been proven to work for NASCOM-2 simulation.
+//    I use it here as well.  It's been proven to work for NASCOM-2 simulation.
+//
+// Notes:
+//
+// 1. The display is set to be refreshed at 30fps. The number of instructions that will execute between
+//    each frame is based on roughly 8 cycles per instructions and a clock frequency of 4MHz.
+//    The necessary delay for each frame in order to get accurate simulation speed is dynamically
+//    determined and turns out to be roughly 25ms.  So for each 33ms (a frame) the ESP32 is idling for
+//    25ms. The ESP32 is more than capable of simulating a 4MHz Z80.
 //
 
 #include <Arduino.h>
