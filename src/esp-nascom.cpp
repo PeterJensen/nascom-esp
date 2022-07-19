@@ -2,6 +2,26 @@
 //
 // NASCOM-2 Simulator running on an ESP32S
 //
+// The simulator uses a VGA display and a PS/2 keyboard.
+// The cassette tape is simulated with both the internal flash and an attached SD card reader.
+//
+// The PlatformIO/VS Code development environment was used for development.
+//
+// The project uses software from various sources:
+//
+// 1. Tommy Thorn's virtual-nascom: https://github.com/tommythorn/virtual-nascom
+//    Nascom-2 keyboard simulation.  Original code is mostly rewritten, but the ideas are the same.
+//    Nascom-2 font definition.
+// 2. bitluni's ESP32Lib: https://github.com/bitluni/ESP32Lib
+//    VGA driver logic.  Made it work with the Nascom-2 font defintion from 1)
+// 3. Fabrizio Di Vittorio's FabGL: https://github.com/fdivitto/FabGL
+//    PS/2 keyboard handling.  This fabulous library does much more than just handling a PS/2
+//    keyboard.  It's also able to handle the VGA and Z80 CPU simulation, but those
+//    parts aren't used.
+// 4. Z80 emulator from Frank D. Cringle:
+//    There are many Z80 emulator's to choose from.  This is the one used by virtual-nascom, and
+//    I use it here as well, since it's been proven to work for NASCOM-2 simulation.
+//
 
 #include <Arduino.h>
 #include <LittleFS.h>
