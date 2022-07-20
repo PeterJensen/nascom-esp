@@ -5,7 +5,8 @@ x = 0; y = 1; z = 2;
 
 //esp32Dims           = [51.6, 28.2, 4.7];
 esp32Dims           = [51.6, 28.2, 5.7];
-vgaPlateDims        = [30.8, 1.0, 12.4];
+//vgaPlateDims        = [30.8, 1.0, 12.4];
+vgaPlateDims        = [31.8, 1.0, 13.4];
 vgaConnectorDims    = [16.2, 16.5, 10.7];
 vgaConnectorOffsets = [0, 6.2 - vgaConnectorDims[y]/2, 0];
 vgaOffsets          = [-18.0, esp32Dims[y]/2+vgaPlateDims[y]+1.5, 11.0];
