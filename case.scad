@@ -3,24 +3,24 @@
 $fn = 50;
 x = 0; y = 1; z = 2;
 
-//esp32Dims           = [51.6, 28.2, 4.7];
-esp32Dims           = [51.6, 28.2, 5.7];
-//vgaPlateDims        = [30.8, 1.0, 12.4];
-vgaPlateDims        = [31.8, 1.0, 13.4];
-vgaConnectorDims    = [16.2, 16.5, 10.7];
-vgaConnectorOffsets = [0, 6.2 - vgaConnectorDims[y]/2, 0];
-vgaOffsets          = [-18.0, esp32Dims[y]/2+vgaPlateDims[y]+1.5, 11.0];
-usbDims             = [13.0, 18.0, 5.6];
-usbOffsets          = [10.0, esp32Dims[y]/2 - usbDims[y]/2 + 3, vgaOffsets[z]];
-sdDims              = [42.3, 23.5, 2.9];
-sdOffsets           = [esp32Dims[x]/2 - sdDims[x]/2 - 20.0, 0, sdDims[z]/2 + esp32Dims[z]/2];
-componentsDims      = [esp32Dims[x] + (sdDims[x] - esp32Dims[x])/2 - sdOffsets[x],
-                       esp32Dims[y],
-                       esp32Dims[z]/2 + vgaOffsets[z] + vgaPlateDims[z]/2];
-boxOuterDims        = [componentsDims[x], componentsDims[y] + 6, componentsDims[z] + 10];
+boxOuterDims        = [60.0, 60.0, 32.0];
 boxWall             = 2;
 boxInnerDims        = [boxOuterDims[x] - 2*boxWall, boxOuterDims[y] - 2*boxWall, boxOuterDims[z] - 2*boxWall];
-componentsOffsets   = [componentsDims[x]/2 - esp32Dims[x]/2, 0, esp32Dims[z]/2 - boxInnerDims[z]/2];
+
+esp32Dims           = [51.6, 28.2, 5.7];
+esp32Offsets        = [boxOuterDims[x]/2 - esp32Dims[x]/2, 0, -boxInnerDims[z]/2 + esp32Dims[z]/2];
+vgaPlateDims        = [31.8, 1.0, 13.4];
+vgaConnectorDims    = [19.0, 16.5, 10.8];
+vgaConnectorOffsets = [0, 6.2 - vgaConnectorDims[y]/2, 0];
+vgaOffsets          = [-10.0, boxOuterDims[y]/2 - vgaPlateDims[y]/2, 0];
+usbDims             = [13.0, 18.0, 5.6];
+usbOffsets          = [18.0, boxOuterDims[y]/2 - usbDims[y]/2, vgaOffsets[z]];
+sdDims              = [42.3, 3.0, 23.5];
+sdPins              = [8.9, 6.5, 15.0];
+sdBraceDims         = [sdDims[x] + 1, sdDims[y] + 3, 3];
+sdBraceOffsets      = [-boxInnerDims[x]/2 + sdBraceDims[x]/2, -boxInnerDims[y]/2 + sdBraceDims[y]/2, -boxInnerDims[z]/2 + sdBraceDims[z]/2];
+sdPinsOffsets       = [sdDims[x]/2 + sdPins[x]/2 - 5.2, -sdDims[y]/2 + sdPins[y]/2 - 1.0, 0];
+sdOffsets           = [-boxOuterDims[x]/2 + sdDims[x]/2, -boxInnerDims[y]/2 + sdDims[y]/2 + 1, -boxInnerDims[z]/2 + sdDims[z]/2];
 esp32HolesD         = 3;
 esp32HolesOffset    = [2 - esp32Dims[x]/2, 2 - esp32Dims[y]/2, -esp32Dims[z]/2];
 vgaHolesD           = 3.3;
@@ -108,10 +108,11 @@ module esp32Holes(d = esp32HolesD) {
 }
 
 module esp32() {
-  difference() {
-    cube(esp32Dims, center=true);
-    esp32Holes();
-  }
+  translate(esp32Offsets)
+    difference() {
+      cube(esp32Dims, center=true);
+      esp32Holes();
+    }
 }
 
 module vgaHoles(d = vgaHolesD) {
@@ -146,19 +147,28 @@ module usb() {
 }
 
 module sd() {
-  translate(sdOffsets)
+  translate(sdOffsets) {
     cube(sdDims, center=true);
+    translate(sdPinsOffsets)
+      cube(sdPins, center=true);
+  }
+}
+
+module sdBrace() {
+  difference() {
+    translate(sdBraceOffsets)
+      cube(sdBraceDims, center=true);
+    sd();
+  }
 }
 
 module components() {
-  translate(componentsOffsets) {
     esp32();
     vga();
     usb();
     sd();
     translate(vgaOffsets)
       vgaHoles();
-  }
 }
 
 
@@ -208,12 +218,11 @@ module box() {
       madeByText();
       components();
       slots();
-//      translate(vgaOffsets + componentsOffsets)
-//        vgaHoles();
       translate([0, 0, boxOuterDims[z] - boxWall])
         cube(boxOuterDims, center=true);
     }
-    translate(componentsOffsets)
+    sdBrace();
+    translate(esp32Offsets)
       esp32Holes(esp32HolesD - 0.5);
   }
 }
