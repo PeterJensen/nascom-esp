@@ -50,7 +50,7 @@ switch2CylMargin = 1.0;
 switch2CylZ      = switch2Z;
 switch2CylD      = switch2TopD + switch2CylMargin;
 
-resetMountOffsets = [-boxOuterDims[x]/2 + 12, -boxOuterDims[y]/2 + 12, boxOuterDims[z]/2 - switch2Z];
+resetMountOffsets = [-boxOuterDims[x]/4, 0, boxOuterDims[z]/2 - switch2Z];
 
 module switch2Cyl() {
   translate([0, 0, 0]) {
@@ -99,6 +99,39 @@ module slots() {
   slot1();
   slots2();
 }
+
+boxRimDims = [boxInnerDims[x], boxInnerDims[y], 2];
+boxRimInnerDims = boxRimDims - [2, 2, 0];
+
+tapY1 = slot1Dims[z] + slotZ;
+tapX2 = 2;
+tapY2 = tapY1;
+tapX3 = tapX2 + 1;
+tapY3 = tapY2 - 1;
+tapX4 = tapX2;
+tapY4 = tapY3 - 1;
+tapX5 = tapX2;
+tapPoints = [[0, 0], [0, tapY1], [tapX2, tapY2], [tapX3, tapY3], [tapX4, tapY4], [tapX5, 0]];
+tapW  = slot1Dims[x] - 1;
+
+module tap() {
+  rotate([-90, 0, 0])
+    translate([0, 0, -tapW/2])
+      linear_extrude(height = tapW)
+        polygon(tapPoints);
+}
+
+module taps() {
+  xOffset1 = boxRimDims[y]/2 - tapX2/2 - 0.5;
+  xOffset2 = -boxRimDims[y]/2 + tapX2/2;
+  yOffset  = boxRimDims[x]/2 - tapX2;
+  zOffset  = boxInnerDims[z]/2;
+//  tap();
+  translate([0, yOffset, zOffset]) rotate([0, 0, 90]) tap();
+  translate([slots2Dist/2, -yOffset, zOffset]) rotate([0, 0, -90]) tap();
+  translate([-slots2Dist/2, -yOffset, zOffset]) rotate([0, 0, -90]) tap();
+}
+
 
 module esp32Holes(d = esp32HolesD) {
   translate(esp32HolesOffset)
@@ -209,7 +242,7 @@ module madeByText() {
     boxText("Jury-rigged by: Peter Jensen", 3);
 }
   
-module box() {
+module boxBottom() {
   color([0.3, 0.5, 0.8, 1.0]) {
     difference() {    
       roundedBox(boxOuterDims, 4);
@@ -227,9 +260,38 @@ module box() {
   }
 }
 
+module boxTopRim() {
+  translate([0, 0, boxInnerDims[z]/2 - boxRimDims[z]/2])
+    difference() {
+      cube(boxRimDims, center = true);
+      cube(boxRimInnerDims, center = true);
+    }
+}
+
+ledD = 4.9;
+ledOffsets = [boxOuterDims[x]/4, 0, boxInnerDims[z]/2 + boxWall/2];
+module led() {
+  translate(ledOffsets)
+    cylinder(d=ledD, h=boxWall, center=true);
+}
+
+module boxTop() {
+  difference() {
+    roundedBox(boxOuterDims, 4);
+    translate([0, 0, -boxWall])
+      cube(boxOuterDims, center=true);
+    resetMount(true);
+    led();
+  }
+  boxTopRim();
+  resetMount();
+  taps();
+}
+
 module main() {
-  box();
+  //boxBottom();
   //components();
+  boxTop();
   //resetMount();
 }
 
