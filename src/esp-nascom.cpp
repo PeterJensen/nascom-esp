@@ -68,7 +68,7 @@ public:
   static const gpio_num_t tapeLed  = GPIO_NUM_16;
   static const gpio_num_t sdSck    = GPIO_NUM_18;
   static const gpio_num_t sdMiso   = GPIO_NUM_19;
-  static const gpio_num_t sdMosi   = GPIO_NUM_13;
+  static const gpio_num_t sdMosi   = GPIO_NUM_23;
   static const gpio_num_t sdCs     = GPIO_NUM_5;
 };
 
@@ -501,10 +501,10 @@ class NascomTape {
   bool tapeLed            = false;
   const char *inFileName  = nullptr;
   const char *outFileName = nullptr;
-  File inFile;
-  File outFile;
-  bool inFileIsOpen       = false;
-  bool outFileIsOpen      = false;
+  File  inFile;
+  File  outFile;
+  FS   *inFs;
+  FS   *outFs;
 public:
 //  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
   void init() {
@@ -517,40 +517,35 @@ public:
   bool getLed() {
     return tapeLed;
   }
-  void setOutputFile(const char *fileName) {
+  void setOutputFile(FS *fs, const char *fileName) {
+    outFs = fs;
     outFileName = fileName;
   }
-  void setInputFile(const char *fileName) {
+  void setInputFile(FS *fs, const char *fileName) {
+    inFs = fs;
     inFileName = fileName;
-    if (inFileIsOpen) {
-      inFile.close();
-    }
-    inFile = LittleFS.open(fileName, "r");
-    inFileIsOpen = true;
   }
   void openFiles() {
     if (inFileName != nullptr) {
-      inFile = LittleFS.open(inFileName, "r");
-      inFileIsOpen = true;
+      inFile = inFs->open(inFileName, "r");
     }
     if (outFileName != nullptr) {
-      outFile = LittleFS.open(outFileName, "w");
-      outFileIsOpen = true;
+      outFile = outFs->open(outFileName, "w");
     }
   }
   void closeFiles() {
-    if (inFileIsOpen) {
+    if (inFile) {
       inFile.close();
     }
-    if (outFileIsOpen) {
+    if (outFile) {
       outFile.close();
     }
   }
   bool hasData() {
-    return inFileIsOpen && inFile.available();
+    return inFile && inFile.available();
   }
   uint8_t readByte() {
-    if (!inFileIsOpen) {
+    if (!inFile) {
       return 0;
     }
     if (!inFile.available()) {
@@ -559,7 +554,7 @@ public:
     return inFile.read();
   }
   void writeByte(uint8_t b) {
-    if (outFileIsOpen) {
+    if (outFile) {
       outFile.write(b);
     }
   }
@@ -691,6 +686,7 @@ public:
 };
 NascomCpu *NascomCpu::self = nullptr;
 
+
 NascomDisplay   nascomDisplay;
 NascomKeyboard  nascomKeyboard(nascomDisplay);
 NascomMemory    nascomMemory(z80::ram);
@@ -714,17 +710,32 @@ void setup() {
     DEBUG_PRINTF("LittleFS mount failed\n");
     return;
   }
+  if (!SD.begin(Pins::sdCs)) {
+    DEBUG_PRINTF("SD card mount failed\n");
+  }
+
+  DEBUG_PRINTF("Internal files:\n");
   File dir = LittleFS.open("/");
   while (File file = dir.openNextFile()) {
     DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
     file.close();
   }
   dir.close();
+
+  DEBUG_PRINTF("External files:\n");
+  dir = SD.open("/");
+  while (File file = dir.openNextFile()) {
+    DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
+    file.close();
+  }
+  dir.close();
+
   nascomTape.init();
   nascomDisplay.init();
   nascomKeyboard.init();
-  nascomTape.setInputFile("/blspascal13.cas");
-  nascomTape.setOutputFile("/tape-out.cas");
+//  nascomTape.setInputFile(&LittleFS, "/blspascal13.cas");
+  nascomTape.setInputFile(&SD, "/Nip.cas");
+  nascomTape.setOutputFile(&LittleFS, "/tape-out.cas");
   nascomMemory.nasFileLoad("/nassys3.nal");
   nascomMemory.nasFileLoad("/basic.nal");
   nascomMemory.nasFileLoad("/skakur.nas");
