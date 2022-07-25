@@ -233,13 +233,18 @@ module boxText(str, size = 8) {
 }
 
 module nascomText() {
-  translate([0, -boxOuterDims[y]/2 + 0.5, 0])
-    boxText("NASCOM-2");
+  translate([0, -boxOuterDims[y]/2 + 0.5, 5])
+    boxText("NASCOM-2", 7.5);
 }
 
 module madeByText() {
-  translate([0, -boxOuterDims[y]/2 + 0.5, -10])
+  translate([0, -boxOuterDims[y]/2 + 0.5, -5])
     boxText("Jury-rigged by: Peter Jensen", 3);
+}
+
+module serialNoText() {
+  translate([0, -boxOuterDims[y]/2 + 0.5, -11])
+    boxText("Serial No.: 2", 3);
 }
   
 module boxBottom() {
@@ -249,6 +254,7 @@ module boxBottom() {
       cube(boxInnerDims, center=true);
       nascomText();
       madeByText();
+      serialNoText();
       components();
       slots();
       translate([0, 0, boxOuterDims[z] - boxWall])
@@ -289,9 +295,9 @@ module boxTop() {
 }
 
 module main() {
-  //boxBottom();
+  boxBottom();
   //components();
-  boxTop();
+  //boxTop();
   //resetMount();
 }
 
