@@ -17,7 +17,8 @@
 // 3. Fabrizio Di Vittorio's FabGL: https://github.com/fdivitto/FabGL:
 //    PS/2 keyboard handling.  This fabulous library does much more than just handling a PS/2
 //    keyboard.  It's also able to handle the VGA and Z80 CPU simulation, but those
-//    parts aren't used.
+//    parts aren't used.  I'm considering using the Z80 simulator, since it tracks clock cycles,
+//    so it should be possible to get a more accurate simulation of time.
 // 4. Z80 emulator from Frank D. Cringle:
 //    There are many Z80 emulator's to choose from.  This is the one used by virtual-nascom, and
 //    I use it here as well.  It's been proven to work for NASCOM-2 simulation.
@@ -131,20 +132,52 @@ private:
   uint32_t              cx = 0;
   uint32_t              cy = 0;
 public:
+  VGA3Bit::Color        white;
+  VGA3Bit::Color        black;
+  VGA3Bit::Color        blue;
+
   void init() {
     //vga.setFrameBufferCount(2);
     vga.init(vga.MODE400x300, Pins::red, Pins::green, Pins::blue, Pins::hsync, Pins::vsync);
+    white = vga.RGB(255, 255, 255);
+    black = vga.RGB(0, 0, 0);
+    blue  = vga.RGB(0, 0, 255);
     vga.setFont(NascomFont);
-    vga.setTextColor(vga.RGB(255, 255, 255), vga.RGB(0, 0, 0));
+    vga.setTextColor(white, black);
   }
+
+  void setTextColor(VGA3Bit::Color fg, VGA3Bit::Color bg) {
+    vga.setTextColor(fg, bg);
+  }
+
+  void clear() {
+    for (uint32_t y = 0; y < height; y++) {
+      for (uint32_t x = 0; x < width; x++) {
+        drawCharAt(x, y, ' ');
+      }
+    }
+  }
+
   void show() {
     //vga.show();
   }
   void setCacheUsed(bool used) {
     cacheUsed = used;
   }
+  void clearCache() {
+    cacheInitialized = false;
+  }
   void drawCharAt(uint32_t x, uint32_t y, uint8_t ch) {
-    vga.drawChar((x + leftMargin)*NascomFont.charWidth, (y + topMargin)*NascomFont.charHeight, ch);
+    if (x < width && y < height) {
+      vga.drawChar((x + leftMargin)*NascomFont.charWidth, (y + topMargin)*NascomFont.charHeight, ch);
+    }
+  }
+  void drawTextAt(uint32_t x, uint32_t y, const char *text) {
+    while (*text != 0) {
+      drawCharAt(x, y, *text);
+      x++;
+      text++;
+    }
   }
   void putChar(uint8_t ch) {
     drawCharAt(cx, cy, ch);
@@ -191,6 +224,43 @@ public:
     show();
   }
 };
+
+class NascomUi {
+  NascomDisplay &display;
+  static NascomUi *self;
+  bool            isActive = false;
+public:
+  NascomUi(NascomDisplay &display) : display(display) {
+    self = this;
+  }
+
+  static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
+    DEBUG_PRINTF("UI: handleVirtualKey\n");
+  }
+
+  void activate() {
+    DEBUG_PRINTF("UI: Activate\n");
+    isActive = true;
+    display.setTextColor(display.white, display.blue);
+  }
+
+  void showScreen() {
+    display.clear();
+    display.drawTextAt(18, 1, "TAPE I/O SETUP");
+  }
+
+  void deactivate() {
+    DEBUG_PRINTF("UI: Deactivate\n");
+    isActive = false;
+    display.clearCache();
+    display.setTextColor(display.white, display.black);
+  }
+
+  bool getIsActive() {
+    return isActive;
+  }
+};
+NascomUi *NascomUi::self = nullptr;
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
@@ -419,13 +489,25 @@ constexpr uint8_t NascomKeyboardMap::ascNkMap[32];
 // Nascom keyboard
 class NascomKeyboard {
   fabgl::Keyboard        keyboard;
-  NascomDisplay         &display;
   NascomKeyboardMap      map;
+  NascomUi              &nascomUi;
   bool                   shiftDown = false;
   bool                   ctrlDown  = false;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
+    if (down && *vk == fabgl::VK_F1) {
+      if (!self->nascomUi.getIsActive()) {
+        self->nascomUi.activate();
+      }
+      else {
+        self->nascomUi.deactivate();
+      }
+    }
+    if (self->nascomUi.getIsActive()) {
+      self->nascomUi.handleVirtualKey(vk, down);
+      return;
+    }
     uint8_t shiftCtrlMask = 0;
     if (*vk == fabgl::VK_LSHIFT || *vk == fabgl::VK_RSHIFT) {
       self->shiftDown = down;
@@ -471,7 +553,7 @@ class NascomKeyboard {
     }
   }
 public:
-  NascomKeyboard(NascomDisplay &display) : display(display) {
+  NascomKeyboard(NascomUi &ui) : nascomUi(ui) {
     self = this;
   }
   void init() {
@@ -647,6 +729,7 @@ class NascomCpu {
 
   NascomDisplay &display;
   NascomMemory  &memory;
+  NascomUi      &nascomUi;
 
   static NascomCpu *self;
 
@@ -673,26 +756,44 @@ class NascomCpu {
     }
     self->display.updateFromMemory(self->memory);
     delay(delayMs);
-    return 0;
+    if (self->nascomUi.getIsActive()) {
+      return -1;
+    }
+    else {
+      return 0;
+    }
   }
 
 public:
-  NascomCpu(NascomDisplay &display, NascomMemory &memory) : display(display), memory(memory) {
+  NascomCpu(NascomDisplay &display, NascomMemory &memory, NascomUi &nascomUi) : display(display), memory(memory), nascomUi(nascomUi) {
     self = this;
   }
   void run() {
-    z80::simz80(0, INSN_PER_REFRESH, simAction);
+    bool uiScreen = false;
+    z80::pc = 0;
+    while (true) {
+      if (!nascomUi.getIsActive()) {
+        uiScreen = false;
+        z80::simz80(z80::pc, INSN_PER_REFRESH, simAction);
+      }
+      else {
+        if (!uiScreen) {
+          nascomUi.showScreen();
+          uiScreen = true;
+        }
+      }
+    }
   }
 };
 NascomCpu *NascomCpu::self = nullptr;
 
-
 NascomDisplay   nascomDisplay;
-NascomKeyboard  nascomKeyboard(nascomDisplay);
+NascomUi        nascomUi(nascomDisplay);
+NascomKeyboard  nascomKeyboard(nascomUi);
 NascomMemory    nascomMemory(z80::ram);
 NascomTape      nascomTape;
 NascomIo        nascomIo(nascomKeyboard, nascomTape);
-NascomCpu       nascomCpu(nascomDisplay, nascomMemory);
+NascomCpu       nascomCpu(nascomDisplay, nascomMemory, nascomUi);
 
 namespace z80 {
   int in(uint32_t port) {
