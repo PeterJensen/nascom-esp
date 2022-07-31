@@ -134,6 +134,8 @@ private:
 public:
   VGA3Bit::Color        white;
   VGA3Bit::Color        black;
+  VGA3Bit::Color        red;
+  VGA3Bit::Color        green;
   VGA3Bit::Color        blue;
 
   void init() {
@@ -141,6 +143,8 @@ public:
     vga.init(vga.MODE400x300, Pins::red, Pins::green, Pins::blue, Pins::hsync, Pins::vsync);
     white = vga.RGB(255, 255, 255);
     black = vga.RGB(0, 0, 0);
+    red   = vga.RGB(255, 0, 0);
+    green = vga.RGB(0, 255, 0);
     blue  = vga.RGB(0, 0, 255);
     vga.setFont(NascomFont);
     vga.setTextColor(white, black);
@@ -225,17 +229,167 @@ public:
   }
 };
 
-class NascomUi {
-  NascomDisplay &display;
-  static NascomUi *self;
-  bool            isActive = false;
+class NascomControl {
+  NascomDisplay        &display;
+  static NascomControl *self;
+  bool                  isActive = false;
+
+  class FieldValues {
+  protected:
+    const char **values = nullptr;
+    uint32_t     numValues;
+    uint32_t     current = 0;
+  public:
+    virtual void refresh() = 0;
+
+    const char *getCurrent() {
+      return values[current];
+    }
+    const char *getNext() {
+      current += 1;
+      if (current == numValues) {
+        current = 0;
+      }
+      return getCurrent();
+    }
+    const char *getPrev() {
+      if (current == 0) {
+        current = numValues;
+      }
+      current -= 1;
+      return getCurrent();
+    }
+  };
+
+  class TapeFsValues : public FieldValues {
+  public:
+    void refresh() {
+      if (values != nullptr) {
+        free(values);
+      }
+      numValues = 2;
+      values = (const char **)malloc(numValues*sizeof(void *));
+      values[0] = "SD Card";
+      values[1] = "Internal Flash";
+    }
+  };
+  class TapeFileNames : public FieldValues {
+  public:
+    void refresh() {
+      if (values != nullptr) {
+        free(values);
+      }
+      numValues = 3;
+      values = (const char **)malloc(numValues*sizeof(void *));
+      values[0] = "File 1";
+      values[1] = "File 2";
+      values[2] = "File 3";
+    }
+  };
+
+  struct Field {
+    uint32_t        x;
+    uint32_t        y;
+    uint32_t        length;
+    FieldValues    *values = nullptr;
+    const char     *text;
+    VGA3Bit::Color  background;
+  };
+  enum FieldNames {
+    noField         = 0,
+    tapeInFs        = 1,
+    tapeInFileName  = 2,
+    tapeOutFs       = 3,
+    tapeOutFileName = 4,
+    numFields       = 5 // pseudo field name
+  };
+  static const FieldNames firstField = tapeInFs;
+  static const FieldNames lastField  = tapeOutFileName;
+
+  Field         fields[numFields];
+  FieldNames    activeField = noField;
+  TapeFsValues  tapeInFsValues;
+  TapeFsValues  tapeOutFsValues;
+  TapeFileNames tapeInFileNames;
+  TapeFileNames tapeOutFileNames;
+
+  void addField(Field &field, uint32_t x, uint32_t y, uint32_t length, FieldValues *values = nullptr) {
+    if (values != nullptr)
+      values->refresh();
+    field.x = x;
+    field.y = y;
+    field.length = length;
+    field.background = display.green;
+    field.values = values;
+    if (values != nullptr)
+      setFieldText(field, values->getCurrent());
+    else
+      setFieldText(field, "");
+  }
+  void setFieldText(Field &field, const char *text) {
+    field.text = text;
+    refreshField(field);
+  }
+  void refreshField(Field &field) {
+    bool filling = false;
+    display.setTextColor(display.white, field.background);
+    for (uint32_t xi = 0; xi < field.length; xi++) {
+      if (!filling && field.text[xi] == 0)
+        filling = true;
+      if (filling)
+        display.drawCharAt(field.x + xi, field.y, ' ');
+      else
+        display.drawCharAt(field.x + xi, field.y, field.text[xi]);
+    }
+  }
+  void setActiveField(FieldNames fieldName) {
+    if (fieldName == noField) {
+      activeField = fieldName;
+    }
+    else if (activeField != fieldName) {
+      fields[activeField].background = display.green;
+      refreshField(fields[activeField]);
+      activeField = fieldName;
+      fields[activeField].background = display.red;
+      refreshField(fields[activeField]);
+    }
+  }
+  void gotoNextField() {
+    FieldNames nextField;
+    if (activeField == lastField)
+      nextField = firstField;
+    else
+      nextField = static_cast<FieldNames>(static_cast<uint32_t>(activeField) + 1);
+    setActiveField(nextField);
+  }
+  void nextFieldValue() {
+    FieldValues *values = fields[activeField].values;
+    if (values != nullptr)
+      setFieldText(fields[activeField], values->getNext());
+    else
+      setFieldText(fields[activeField], "");
+  }
+  void prevFieldValue() {
+    FieldValues *values = fields[activeField].values;
+    if (values != nullptr)
+      setFieldText(fields[activeField], values->getPrev());
+    else
+      setFieldText(fields[activeField], "");
+  }
+
 public:
-  NascomUi(NascomDisplay &display) : display(display) {
+  NascomControl (NascomDisplay &display) : display(display) {
     self = this;
   }
 
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("UI: handleVirtualKey\n");
+    if (down && (*vk == fabgl::VK_TAB))
+      self->gotoNextField();
+    else if (down && (*vk == fabgl::VK_UP))
+      self->prevFieldValue();
+    else if (down && (*vk == fabgl::VK_DOWN))
+      self->nextFieldValue();
   }
 
   void activate() {
@@ -246,7 +400,17 @@ public:
 
   void showScreen() {
     display.clear();
-    display.drawTextAt(18, 1, "TAPE I/O SETUP");
+    setActiveField(noField);
+    display.drawTextAt(16, 1, "Nascom-2 Control");
+    display.drawTextAt(10, 3, "File System");
+    display.drawTextAt(25, 3, "File Name");
+    display.drawTextAt(1, 4, "Tape In");
+    display.drawTextAt(1, 6, "Tape Out");
+    addField(fields[tapeInFs], 10, 4, 14, &tapeInFsValues);
+    addField(fields[tapeInFileName], 25, 4, 22, &tapeInFileNames);
+    addField(fields[tapeOutFs], 10, 6, 14, &tapeOutFsValues);
+    addField(fields[tapeOutFileName], 25, 6, 22, &tapeOutFileNames);
+    setActiveField(firstField);
   }
 
   void deactivate() {
@@ -260,7 +424,7 @@ public:
     return isActive;
   }
 };
-NascomUi *NascomUi::self = nullptr;
+NascomControl *NascomControl::self = nullptr;
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
@@ -490,22 +654,22 @@ constexpr uint8_t NascomKeyboardMap::ascNkMap[32];
 class NascomKeyboard {
   fabgl::Keyboard        keyboard;
   NascomKeyboardMap      map;
-  NascomUi              &nascomUi;
+  NascomControl         &control;
   bool                   shiftDown = false;
   bool                   ctrlDown  = false;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
     if (down && *vk == fabgl::VK_F1) {
-      if (!self->nascomUi.getIsActive()) {
-        self->nascomUi.activate();
+      if (!self->control.getIsActive()) {
+        self->control.activate();
       }
       else {
-        self->nascomUi.deactivate();
+        self->control.deactivate();
       }
     }
-    if (self->nascomUi.getIsActive()) {
-      self->nascomUi.handleVirtualKey(vk, down);
+    if (self->control.getIsActive()) {
+      self->control.handleVirtualKey(vk, down);
       return;
     }
     uint8_t shiftCtrlMask = 0;
@@ -553,7 +717,7 @@ class NascomKeyboard {
     }
   }
 public:
-  NascomKeyboard(NascomUi &ui) : nascomUi(ui) {
+  NascomKeyboard(NascomControl &control) : control(control) {
     self = this;
   }
   void init() {
@@ -729,7 +893,7 @@ class NascomCpu {
 
   NascomDisplay &display;
   NascomMemory  &memory;
-  NascomUi      &nascomUi;
+  NascomControl &control;
 
   static NascomCpu *self;
 
@@ -756,7 +920,7 @@ class NascomCpu {
     }
     self->display.updateFromMemory(self->memory);
     delay(delayMs);
-    if (self->nascomUi.getIsActive()) {
+    if (self->control.getIsActive()) {
       return -1;
     }
     else {
@@ -765,21 +929,21 @@ class NascomCpu {
   }
 
 public:
-  NascomCpu(NascomDisplay &display, NascomMemory &memory, NascomUi &nascomUi) : display(display), memory(memory), nascomUi(nascomUi) {
+  NascomCpu(NascomDisplay &display, NascomMemory &memory, NascomControl &control) : display(display), memory(memory), control(control) {
     self = this;
   }
   void run() {
-    bool uiScreen = false;
+    bool controlScreen = false;
     z80::pc = 0;
     while (true) {
-      if (!nascomUi.getIsActive()) {
-        uiScreen = false;
+      if (!control.getIsActive()) {
+        controlScreen = false;
         z80::simz80(z80::pc, INSN_PER_REFRESH, simAction);
       }
       else {
-        if (!uiScreen) {
-          nascomUi.showScreen();
-          uiScreen = true;
+        if (!controlScreen) {
+          control.showScreen();
+          controlScreen = true;
         }
       }
     }
@@ -788,12 +952,12 @@ public:
 NascomCpu *NascomCpu::self = nullptr;
 
 NascomDisplay   nascomDisplay;
-NascomUi        nascomUi(nascomDisplay);
-NascomKeyboard  nascomKeyboard(nascomUi);
+NascomControl   control(nascomDisplay);
+NascomKeyboard  nascomKeyboard(control);
 NascomMemory    nascomMemory(z80::ram);
 NascomTape      nascomTape;
 NascomIo        nascomIo(nascomKeyboard, nascomTape);
-NascomCpu       nascomCpu(nascomDisplay, nascomMemory, nascomUi);
+NascomCpu       nascomCpu(nascomDisplay, nascomMemory, control);
 
 namespace z80 {
   int in(uint32_t port) {
