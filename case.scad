@@ -244,7 +244,7 @@ module madeByText() {
 
 module serialNoText() {
   translate([0, -boxOuterDims[y]/2 + 0.5, -11])
-    boxText("Serial No.: 2", 3);
+    boxText("Serial No.: 3", 3);
 }
   
 module boxBottom() {
