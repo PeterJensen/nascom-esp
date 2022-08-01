@@ -56,6 +56,10 @@ namespace z80 {
   BYTE ram[MEMSIZE*1024+1];  // The +1 location is for the wraparound GetWord
 };
 
+static const char *startText =
+  "Nascom-2 Emulation on ESP32S - V1.0\x17\x14"
+  "        by Peter Jensen\x17\x14";
+
 // Pin configuration
 class Pins {
 public:
@@ -859,6 +863,9 @@ class NascomKeyboard {
   NascomControl         &control;
   bool                   shiftDown = false;
   bool                   ctrlDown  = false;
+  const char            *startText;
+  uint32_t               startTextIndex = 0;
+  bool                   startTextKeyDown = false;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
@@ -919,7 +926,7 @@ class NascomKeyboard {
     }
   }
 public:
-  NascomKeyboard(NascomControl &control) : control(control) {
+  NascomKeyboard(NascomControl &control, const char *startText = "") : control(control), startText(startText) {
     self = this;
   }
   void init() {
@@ -930,6 +937,17 @@ public:
     return keyboard;
   }
   void mapRewind() {
+    if (startText[startTextIndex] != 0) {
+      if (startTextKeyDown) {
+        map.setKey(NK_NONE, false);
+        startTextKeyDown = false;
+        startTextIndex += 1;
+      }
+      else {
+        map.setAsciiChar(startText[startTextIndex], true);
+        startTextKeyDown = true;
+      }
+    }
     map.rewind();
   }
   void mapStep() {
@@ -1093,7 +1111,7 @@ NascomCpu *NascomCpu::self = nullptr;
 NascomDisplay   nascomDisplay;
 NascomTape      nascomTape;
 NascomControl   nascomControl(nascomDisplay, nascomTape);
-NascomKeyboard  nascomKeyboard(nascomControl);
+NascomKeyboard  nascomKeyboard(nascomControl, startText);
 NascomMemory    nascomMemory(z80::ram);
 NascomIo        nascomIo(nascomKeyboard, nascomTape);
 NascomCpu       nascomCpu(nascomDisplay, nascomMemory, nascomControl);
