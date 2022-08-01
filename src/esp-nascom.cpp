@@ -229,21 +229,112 @@ public:
   }
 };
 
+class NascomTape {
+  bool                  tapeLed        = false;
+  static const uint32_t maxFileNameLen = 32;
+  char                  inFileName[maxFileNameLen];
+  char                  outFileName[maxFileNameLen];
+  File  inFile;
+  File  outFile;
+  FS   *inFs;
+  FS   *outFs;
+public:
+//  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
+  void init() {
+    pinMode(Pins::tapeLed, OUTPUT);
+    inFileName[0] = 0;
+    outFileName[0] = 0;
+  }
+  void setLed(bool isOn) {
+    tapeLed = isOn;
+    digitalWrite(Pins::tapeLed, isOn ? HIGH : LOW);
+  }
+  bool getLed() {
+    return tapeLed;
+  }
+  void setOutputFile(FS *fs, const char *fileName) {
+    outFs = fs;
+    if (fileName[0] != '/') {
+      outFileName[0] = '/';
+      strncpy(&(outFileName[1]), fileName, maxFileNameLen-1);
+    }
+    else
+      strncpy(outFileName, fileName, maxFileNameLen);
+    outFileName[maxFileNameLen-1] = 0;
+  }
+  void setInputFile(FS *fs, const char *fileName) {
+    inFs = fs;
+    if (fileName[0] != '/') {
+      inFileName[0] = '/';
+      strncpy(&(inFileName[1]), fileName, maxFileNameLen-1);
+    }
+    else
+      strncpy(inFileName, fileName, maxFileNameLen);
+    inFileName[maxFileNameLen-1] = 0;
+    DEBUG_PRINTF("setInputFile: %s\n", inFileName);
+  }
+  void openFiles() {
+    if (inFs == &SD || outFs == &SD)
+      SD.begin(Pins::sdCs);
+    if (inFileName[0] != 0) {
+      inFile = inFs->open(inFileName, "r");
+    }
+    if (outFileName[0] != 0) {
+      outFile = outFs->open(outFileName, "w");
+    }
+  }
+  void closeFiles() {
+    if (inFile) {
+      inFile.close();
+    }
+    if (outFile) {
+      outFile.close();
+    }
+    if (inFs == &SD || outFs == &SD)
+      SD.end();
+  }
+  bool hasData() {
+    return inFile && inFile.available();
+  }
+  uint8_t readByte() {
+    if (!inFile) {
+      return 0;
+    }
+    if (!inFile.available()) {
+      inFile.seek(0);
+    }
+    return inFile.read();
+  }
+  void writeByte(uint8_t b) {
+    if (outFile) {
+      outFile.write(b);
+    }
+  }
+};
+
+// Nascom Control
+// UI for picking tape i/o files
+
 class NascomControl {
   NascomDisplay        &display;
+  NascomTape           &tape;
   static NascomControl *self;
   bool                  isActive = false;
 
   class FieldValues {
   protected:
     const char **values = nullptr;
-    uint32_t     numValues;
+    uint32_t     numValues = 0;
     uint32_t     current = 0;
+    bool         refreshed = false;
   public:
     virtual void refresh() = 0;
 
     const char *getCurrent() {
-      return values[current];
+      if (numValues == 0)
+        return "";
+      else
+        return values[current];
     }
     const char *getNext() {
       current += 1;
@@ -259,31 +350,112 @@ class NascomControl {
       current -= 1;
       return getCurrent();
     }
+    void reset() {
+      current = 0;
+    }
+    bool isRefreshed() {
+      return refreshed;
+    }
   };
 
   class TapeFsValues : public FieldValues {
   public:
     void refresh() {
+      DEBUG_PRINTF("TapeFsValues::refresh\n");
       if (values != nullptr) {
         free(values);
       }
-      numValues = 2;
-      values = (const char **)malloc(numValues*sizeof(void *));
-      values[0] = "SD Card";
-      values[1] = "Internal Flash";
+      values = (const char **)malloc(2*sizeof(void *));
+      bool hasInternal = true; //LittleFS.begin();
+      bool hasSd       = SD.begin(Pins::sdCs);
+      if (hasSd) {
+        sdcard_type_t cardType = SD.cardType();
+        if (cardType == CARD_NONE || cardType == CARD_UNKNOWN) {
+          hasSd = false;
+        }
+      }
+      SD.end();
+
+      numValues = 0;
+      if (hasInternal) {
+        values[numValues] = "Internal Flash";
+        numValues += 1;
+      }
+      if (hasSd) {
+        values[numValues] = "SD Card";
+        numValues += 1;
+      }
+      this->reset();
+      refreshed = true;
     }
   };
-  class TapeFileNames : public FieldValues {
+  class FileNames {
+  public:
+    static uint32_t fileCount(File dir) {
+      uint32_t count = 0;
+      dir.rewindDirectory();
+      while (File file = dir.openNextFile()) {
+        count += 1;
+        file.close();
+      }
+      return count;
+    }
+    static const char **makeFileNames(File dir, uint32_t *count) {
+      *count = fileCount(dir);
+      char const **names = (const char **)malloc((*count)*sizeof(char *));
+      uint32_t fileNum = 0;
+      dir.rewindDirectory();
+      while (File file = dir.openNextFile()) {
+        const char *name = file.name();
+        char *nameValue = (char *)malloc(strlen(name)+1);
+        strcpy(nameValue, name);
+        names[fileNum] = nameValue;
+        fileNum += 1;
+        file.close();
+      }
+      return names;
+    }
+    static void freeFileNames(const char **names, uint32_t count) {
+      for (uint32_t vi = 0; vi < count; vi++)
+        free((void *)names[vi]);
+      free(names);
+    }
+
+  };
+  class TapeFileNamesSd : public FieldValues, public FileNames {
   public:
     void refresh() {
+      DEBUG_PRINTF("TapeFileNamesSd::refresh\n");
       if (values != nullptr) {
-        free(values);
+        freeFileNames(values, numValues);
       }
-      numValues = 3;
-      values = (const char **)malloc(numValues*sizeof(void *));
-      values[0] = "File 1";
-      values[1] = "File 2";
-      values[2] = "File 3";
+      bool hasSd = SD.begin(Pins::sdCs);
+      if (!hasSd) {
+        values = nullptr;
+        numValues = 0;
+        return;
+      }
+      File dir = SD.open("/");
+      values = makeFileNames(dir, &numValues);
+      dir.close();
+      SD.end();
+      this->reset();
+      refreshed = true;
+    }
+  };
+
+  class TapeFileNamesInt : public FieldValues, public FileNames {
+  public:
+    void refresh() {
+      DEBUG_PRINTF("TapeFileNamesInt::refresh\n");
+      if (values != nullptr) {
+        freeFileNames(values, numValues);
+      }
+      File dir = LittleFS.open("/");
+      values = makeFileNames(dir, &numValues);
+      dir.close();
+      this->reset();
+      refreshed = true;
     }
   };
 
@@ -306,16 +478,19 @@ class NascomControl {
   static const FieldNames firstField = tapeInFs;
   static const FieldNames lastField  = tapeOutFileName;
 
-  Field         fields[numFields];
-  FieldNames    activeField = noField;
-  TapeFsValues  tapeInFsValues;
-  TapeFsValues  tapeOutFsValues;
-  TapeFileNames tapeInFileNames;
-  TapeFileNames tapeOutFileNames;
+  enum FieldMove {
+    current,
+    next,
+    prev
+  };
+
+  Field            fields[numFields];
+  FieldNames       activeField = noField;
+  TapeFsValues     tapeFsValues;
+  TapeFileNamesSd  tapeFileNamesSd;
+  TapeFileNamesInt tapeFileNamesInt;
 
   void addField(Field &field, uint32_t x, uint32_t y, uint32_t length, FieldValues *values = nullptr) {
-    if (values != nullptr)
-      values->refresh();
     field.x = x;
     field.y = y;
     field.length = length;
@@ -362,23 +537,39 @@ class NascomControl {
       nextField = static_cast<FieldNames>(static_cast<uint32_t>(activeField) + 1);
     setActiveField(nextField);
   }
-  void nextFieldValue() {
-    FieldValues *values = fields[activeField].values;
-    if (values != nullptr)
-      setFieldText(fields[activeField], values->getNext());
+  void updateFieldValues(FieldNames fieldName, FieldValues *values) {
+    DEBUG_PRINTF("updateFieldValues: %d\n", fieldName);
+    fields[fieldName].values = values;
+    updateFieldValue(fieldName, current);
+  }
+  void updateFieldValue(FieldNames fieldName, FieldMove move) {
+    DEBUG_PRINTF("updateFieldValue: %d\n", fieldName);
+    FieldValues *values = fields[fieldName].values;
+    const char  *newValue = nullptr; 
+    if (values != nullptr) {
+      if (move == current)
+        newValue = values->getCurrent();
+      else if (move == next)
+        newValue = values->getNext();
+      else // if (move == prev)
+        newValue = values->getPrev();
+      setFieldText(fields[fieldName], newValue);
+      if (fieldName == tapeInFs) {
+        if (newValue[0] == 'I') //
+          updateFieldValues(tapeInFileName, &tapeFileNamesInt);
+        else 
+          updateFieldValues(tapeInFileName, &tapeFileNamesSd);
+      }
+    }
     else
       setFieldText(fields[activeField], "");
   }
-  void prevFieldValue() {
-    FieldValues *values = fields[activeField].values;
-    if (values != nullptr)
-      setFieldText(fields[activeField], values->getPrev());
-    else
-      setFieldText(fields[activeField], "");
+  const char *getFieldText(FieldNames fieldName) {
+    return fields[fieldName].text;
   }
 
 public:
-  NascomControl (NascomDisplay &display) : display(display) {
+  NascomControl (NascomDisplay &display, NascomTape &tape) : display(display), tape(tape) {
     self = this;
   }
 
@@ -387,15 +578,15 @@ public:
     if (down && (*vk == fabgl::VK_TAB))
       self->gotoNextField();
     else if (down && (*vk == fabgl::VK_UP))
-      self->prevFieldValue();
+      self->updateFieldValue(self->activeField, prev);
     else if (down && (*vk == fabgl::VK_DOWN))
-      self->nextFieldValue();
+      self->updateFieldValue(self->activeField, next);
   }
 
   void activate() {
     DEBUG_PRINTF("UI: Activate\n");
-    isActive = true;
     display.setTextColor(display.white, display.blue);
+    isActive = true;
   }
 
   void showScreen() {
@@ -406,10 +597,13 @@ public:
     display.drawTextAt(25, 3, "File Name");
     display.drawTextAt(1, 4, "Tape In");
     display.drawTextAt(1, 6, "Tape Out");
-    addField(fields[tapeInFs], 10, 4, 14, &tapeInFsValues);
-    addField(fields[tapeInFileName], 25, 4, 22, &tapeInFileNames);
-    addField(fields[tapeOutFs], 10, 6, 14, &tapeOutFsValues);
-    addField(fields[tapeOutFileName], 25, 6, 22, &tapeOutFileNames);
+    tapeFsValues.refresh();
+    addField(fields[tapeInFs], 10, 4, 14, &tapeFsValues);
+    tapeFileNamesInt.refresh();
+    tapeFileNamesSd.refresh();
+    addField(fields[tapeInFileName], 25, 4, 22, &tapeFileNamesInt);
+    addField(fields[tapeOutFs], 10, 6, 14, &tapeFsValues);
+    addField(fields[tapeOutFileName], 25, 6, 22, &tapeFileNamesSd);
     setActiveField(firstField);
   }
 
@@ -418,6 +612,14 @@ public:
     isActive = false;
     display.clearCache();
     display.setTextColor(display.white, display.black);
+    const char *fs   = getFieldText(tapeInFs);
+    const char *name = getFieldText(tapeInFileName);
+    DEBUG_PRINTF("fs: %s\n", fs);
+    DEBUG_PRINTF("name: %s\n", name);
+    if (fs[0] == 'I')
+      tape.setInputFile(&LittleFS, name);
+    else
+      tape.setInputFile(&SD, name);
   }
 
   bool getIsActive() {
@@ -743,69 +945,6 @@ public:
 };
 NascomKeyboard *NascomKeyboard::self = nullptr;
 
-class NascomTape {
-  bool tapeLed            = false;
-  const char *inFileName  = nullptr;
-  const char *outFileName = nullptr;
-  File  inFile;
-  File  outFile;
-  FS   *inFs;
-  FS   *outFs;
-public:
-//  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
-  void init() {
-    pinMode(Pins::tapeLed, OUTPUT);
-  }
-  void setLed(bool isOn) {
-    tapeLed = isOn;
-    digitalWrite(Pins::tapeLed, isOn ? HIGH : LOW);
-  }
-  bool getLed() {
-    return tapeLed;
-  }
-  void setOutputFile(FS *fs, const char *fileName) {
-    outFs = fs;
-    outFileName = fileName;
-  }
-  void setInputFile(FS *fs, const char *fileName) {
-    inFs = fs;
-    inFileName = fileName;
-  }
-  void openFiles() {
-    if (inFileName != nullptr) {
-      inFile = inFs->open(inFileName, "r");
-    }
-    if (outFileName != nullptr) {
-      outFile = outFs->open(outFileName, "w");
-    }
-  }
-  void closeFiles() {
-    if (inFile) {
-      inFile.close();
-    }
-    if (outFile) {
-      outFile.close();
-    }
-  }
-  bool hasData() {
-    return inFile && inFile.available();
-  }
-  uint8_t readByte() {
-    if (!inFile) {
-      return 0;
-    }
-    if (!inFile.available()) {
-      inFile.seek(0);
-    }
-    return inFile.read();
-  }
-  void writeByte(uint8_t b) {
-    if (outFile) {
-      outFile.write(b);
-    }
-  }
-};
-
 // Nascom IO logic
 class NascomIo {
   // Port0 Out/In bits
@@ -952,10 +1091,10 @@ public:
 NascomCpu *NascomCpu::self = nullptr;
 
 NascomDisplay   nascomDisplay;
-NascomControl   control(nascomDisplay);
+NascomTape      nascomTape;
+NascomControl   control(nascomDisplay, nascomTape);
 NascomKeyboard  nascomKeyboard(control);
 NascomMemory    nascomMemory(z80::ram);
-NascomTape      nascomTape;
 NascomIo        nascomIo(nascomKeyboard, nascomTape);
 NascomCpu       nascomCpu(nascomDisplay, nascomMemory, control);
 
@@ -994,6 +1133,7 @@ void setup() {
     file.close();
   }
   dir.close();
+  SD.end();
 
   nascomTape.init();
   nascomDisplay.init();
