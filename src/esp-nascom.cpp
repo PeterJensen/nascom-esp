@@ -1092,11 +1092,11 @@ NascomCpu *NascomCpu::self = nullptr;
 
 NascomDisplay   nascomDisplay;
 NascomTape      nascomTape;
-NascomControl   control(nascomDisplay, nascomTape);
-NascomKeyboard  nascomKeyboard(control);
+NascomControl   nascomControl(nascomDisplay, nascomTape);
+NascomKeyboard  nascomKeyboard(nascomControl);
 NascomMemory    nascomMemory(z80::ram);
 NascomIo        nascomIo(nascomKeyboard, nascomTape);
-NascomCpu       nascomCpu(nascomDisplay, nascomMemory, control);
+NascomCpu       nascomCpu(nascomDisplay, nascomMemory, nascomControl);
 
 namespace z80 {
   int in(uint32_t port) {
