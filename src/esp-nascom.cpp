@@ -939,7 +939,7 @@ public:
   void mapRewind() {
     if (startText[startTextIndex] != 0) {
       if (startTextKeyDown) {
-        map.setKey(NK_NONE, false);
+        map.setAsciiChar(startText[startTextIndex], false);
         startTextKeyDown = false;
         startTextIndex += 1;
       }
