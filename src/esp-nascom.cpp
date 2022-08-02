@@ -57,8 +57,9 @@ namespace z80 {
 };
 
 static const char *startText =
-  "Nascom-2 Emulation on ESP32S - V1.0\x17\x14"
-  "        by Peter Jensen\x17\x14";
+  "      nASCOM-2 eMULATION ON esp-32 - V1.0\x17\x14"
+  "                BY pETER jENSEN\x17\x14"
+  "          pRESS f1 FOR CONTROL SCREEN\x17\x14";
 
 // Pin configuration
 class Pins {
