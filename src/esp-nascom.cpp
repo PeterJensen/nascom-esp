@@ -243,12 +243,14 @@ class NascomTape {
   File  outFile;
   FS   *inFs;
   FS   *outFs;
+  bool  filesAreOpen;
 public:
 //  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
   void init() {
     pinMode(Pins::tapeLed, OUTPUT);
     inFileName[0] = 0;
     outFileName[0] = 0;
+    filesAreOpen = false;
   }
   void setLed(bool isOn) {
     tapeLed = isOn;
@@ -280,16 +282,19 @@ public:
     DEBUG_PRINTF("setInputFile: %s\n", inFileName);
   }
   void openFiles() {
+    DEBUG_PRINTF("openFiles\n");
+    if (filesAreOpen)
+      return;
     if (inFs == &SD || outFs == &SD)
       SD.begin(Pins::sdCs);
-    if (inFileName[0] != 0) {
+    if (inFileName[0] != 0)
       inFile = inFs->open(inFileName, "r");
-    }
-    if (outFileName[0] != 0) {
+    if (outFileName[0] != 0)
       outFile = outFs->open(outFileName, "w");
-    }
+    filesAreOpen = true;
   }
   void closeFiles() {
+    DEBUG_PRINTF("closeFiles\n");
     if (inFile) {
       inFile.close();
     }
@@ -298,6 +303,7 @@ public:
     }
     if (inFs == &SD || outFs == &SD)
       SD.end();
+    filesAreOpen = false;
   }
   bool hasData() {
     return inFile && inFile.available();
@@ -312,7 +318,13 @@ public:
     return inFile.read();
   }
   void writeByte(uint8_t b) {
-    if (outFile) {
+    DEBUG_PRINTF("writeByte: %02x\n", b);
+    if (outFile && filesAreOpen) {
+      outFile.write(b);
+    }
+    else {
+      // some programs start writing data before turning on the LED
+      openFiles();
       outFile.write(b);
     }
   }
