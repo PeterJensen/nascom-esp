@@ -237,8 +237,8 @@ public:
 class NascomTape {
   bool                  tapeLed        = false;
   static const uint32_t maxFileNameLen = 32;
-  char                  inFileName[maxFileNameLen];
-  char                  outFileName[maxFileNameLen];
+  char                  inFileName[maxFileNameLen+1];
+  char                  outFileName[maxFileNameLen+1];
   File  inFile;
   File  outFile;
   FS   *inFs;
@@ -265,7 +265,8 @@ public:
     }
     else
       strncpy(outFileName, fileName, maxFileNameLen);
-    outFileName[maxFileNameLen-1] = 0;
+    outFileName[maxFileNameLen] = 0;
+    DEBUG_PRINTF("setOutputFile: %s\n", outFileName);
   }
   void setInputFile(FS *fs, const char *fileName) {
     inFs = fs;
@@ -275,7 +276,7 @@ public:
     }
     else
       strncpy(inFileName, fileName, maxFileNameLen);
-    inFileName[maxFileNameLen-1] = 0;
+    inFileName[maxFileNameLen] = 0;
     DEBUG_PRINTF("setInputFile: %s\n", inFileName);
   }
   void openFiles() {
@@ -464,14 +465,6 @@ class NascomControl {
     }
   };
 
-  struct Field {
-    uint32_t        x;
-    uint32_t        y;
-    uint32_t        length;
-    FieldValues    *values = nullptr;
-    const char     *text;
-    VGA3Bit::Color  background;
-  };
   enum FieldNames {
     noField         = 0,
     tapeInFs        = 1,
@@ -479,6 +472,22 @@ class NascomControl {
     tapeOutFs       = 3,
     tapeOutFileName = 4,
     numFields       = 5 // pseudo field name
+  };
+  enum FieldType {
+    withValues,
+    withText
+  };
+  static const uint32_t maxTextFieldLen = 30;
+  struct Field {
+    uint32_t        x;
+    uint32_t        y;
+    uint32_t        length;
+    VGA3Bit::Color  background;
+    FieldType       type;
+    const char     *text;
+    char            textEdit[maxTextFieldLen + 1];
+    uint32_t        textLastChar;
+    FieldValues    *values = nullptr;
   };
   static const FieldNames firstField = tapeInFs;
   static const FieldNames lastField  = tapeOutFileName;
@@ -495,17 +504,36 @@ class NascomControl {
   TapeFileNamesSd  tapeFileNamesSd;
   TapeFileNamesInt tapeFileNamesInt;
 
-  void addField(Field &field, uint32_t x, uint32_t y, uint32_t length, FieldValues *values = nullptr) {
+  void addFieldWithValues(Field &field, uint32_t x, uint32_t y, uint32_t length, FieldValues *values) {
     field.x = x;
     field.y = y;
     field.length = length;
     field.background = display.green;
     field.values = values;
+    field.type = withValues;
     if (values != nullptr)
       setFieldText(field, values->getCurrent());
     else
       setFieldText(field, "");
   }
+  void addFieldWithText(Field &field, uint32_t x, uint32_t y, uint32_t length, const char *text) {
+    field.x = x;
+    field.y = y;
+    field.length = length;
+    field.background = display.green;
+    field.type = withText;
+    if (text != nullptr) {
+      strncpy(field.textEdit, text, maxTextFieldLen);
+      field.textEdit[maxTextFieldLen] = 0;
+      field.textLastChar = strlen(text);
+    }
+    else {
+      field.textEdit[0] = 0;
+      field.textLastChar = 0;
+    }
+    setFieldText(field, field.textEdit);
+  }
+
   void setFieldText(Field &field, const char *text) {
     field.text = text;
     refreshField(field);
@@ -549,6 +577,9 @@ class NascomControl {
   }
   void updateFieldValue(FieldNames fieldName, FieldMove move) {
     DEBUG_PRINTF("updateFieldValue: %d\n", fieldName);
+    Field &field = fields[fieldName];
+    if (field.type != withValues)
+      return;
     FieldValues *values = fields[fieldName].values;
     const char  *newValue = nullptr; 
     if (values != nullptr) {
@@ -558,7 +589,7 @@ class NascomControl {
         newValue = values->getNext();
       else // if (move == prev)
         newValue = values->getPrev();
-      setFieldText(fields[fieldName], newValue);
+      setFieldText(field, newValue);
       if (fieldName == tapeInFs) {
         if (newValue[0] == 'I') //
           updateFieldValues(tapeInFileName, &tapeFileNamesInt);
@@ -569,6 +600,28 @@ class NascomControl {
     else
       setFieldText(fields[activeField], "");
   }
+  void updateFieldText(FieldNames fieldName, uint8_t c) {
+    Field &field = fields[fieldName];
+    if (field.type != withText)
+      return;
+    if (c == 0x08) {
+      // backspace
+      DEBUG_PRINTF("updateFieldText: backspace\n", c);
+      if (field.textLastChar > 0) {
+        field.textLastChar -= 1;
+        field.textEdit[field.textLastChar] = 0;
+        setFieldText(field, field.textEdit);
+      }
+    }
+    else if (c > 32 && c < 127) {
+      DEBUG_PRINTF("updateFieldText: %c\n", c);
+      if (field.textLastChar < maxTextFieldLen) {
+        field.textEdit[field.textLastChar] = c;
+        field.textLastChar += 1;
+        setFieldText(field, field.textEdit);
+      }
+    }
+  }
   const char *getFieldText(FieldNames fieldName) {
     return fields[fieldName].text;
   }
@@ -578,7 +631,7 @@ public:
     self = this;
   }
 
-  static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
+  static void handleVirtualKey(fabgl::VirtualKey *vk, fabgl::Keyboard &keyboard, bool down) {
     DEBUG_PRINTF("UI: handleVirtualKey\n");
     if (down && (*vk == fabgl::VK_TAB))
       self->gotoNextField();
@@ -586,6 +639,11 @@ public:
       self->updateFieldValue(self->activeField, prev);
     else if (down && (*vk == fabgl::VK_DOWN))
       self->updateFieldValue(self->activeField, next);
+    else if (down) {
+      int asc = keyboard.virtualKeyToASCII(*vk);
+      if (asc != -1)
+        self->updateFieldText(self->activeField, asc);
+    }
   }
 
   void activate() {
@@ -603,12 +661,12 @@ public:
     display.drawTextAt(1, 4, "Tape In");
     display.drawTextAt(1, 6, "Tape Out");
     tapeFsValues.refresh();
-    addField(fields[tapeInFs], 10, 4, 14, &tapeFsValues);
+    addFieldWithValues(fields[tapeInFs], 10, 4, 14, &tapeFsValues);
     tapeFileNamesInt.refresh();
     tapeFileNamesSd.refresh();
-    addField(fields[tapeInFileName], 25, 4, 22, &tapeFileNamesInt);
-    addField(fields[tapeOutFs], 10, 6, 14, &tapeFsValues);
-    addField(fields[tapeOutFileName], 25, 6, 22, &tapeFileNamesSd);
+    addFieldWithValues(fields[tapeInFileName], 25, 4, 22, &tapeFileNamesInt);
+    addFieldWithValues(fields[tapeOutFs], 10, 6, 14, &tapeFsValues);
+    addFieldWithText(fields[tapeOutFileName], 25, 6, 22, "tape-out.cas");
     setActiveField(firstField);
   }
 
@@ -619,12 +677,21 @@ public:
     display.setTextColor(display.white, display.black);
     const char *fs   = getFieldText(tapeInFs);
     const char *name = getFieldText(tapeInFileName);
-    DEBUG_PRINTF("fs: %s\n", fs);
-    DEBUG_PRINTF("name: %s\n", name);
+    DEBUG_PRINTF("tapeInFs: %s\n", fs);
+    DEBUG_PRINTF("tapeInFileName: %s\n", name);
     if (fs[0] == 'I')
       tape.setInputFile(&LittleFS, name);
     else
       tape.setInputFile(&SD, name);
+
+    fs   = getFieldText(tapeOutFs);
+    name = getFieldText(tapeOutFileName);
+    DEBUG_PRINTF("tapeOutFs: %s\n", fs);
+    DEBUG_PRINTF("tapeOutFileName: %s\n", name);
+    if (fs[0] == 'I')
+      tape.setOutputFile(&LittleFS, name);
+    else
+      tape.setOutputFile(&SD, name);
   }
 
   bool getIsActive() {
@@ -797,7 +864,7 @@ public:
 
   bool setAsciiChar(uint8_t ascChar, bool down) {
     uint8_t nk = getNascomKey(ascChar);
-    DEBUG_PRINTF("nk: %02x (%d, %d) %s %s\n", nk, NK_ROW(nk), NK_COL(nk), NK_HAS_SHIFT(nk) ? "SHIFT" : "", NK_HAS_CTRL(nk) ? "CTRL" : "");
+    //DEBUG_PRINTF("nk: %02x (%d, %d) %s %s\n", nk, NK_ROW(nk), NK_COL(nk), NK_HAS_SHIFT(nk) ? "SHIFT" : "", NK_HAS_CTRL(nk) ? "CTRL" : "");
     if (nk != NK_NONE) {
       mapIsUpdating = true;
       setKeyAll(nk, down);
@@ -879,7 +946,7 @@ class NascomKeyboard {
       }
     }
     if (self->control.getIsActive()) {
-      self->control.handleVirtualKey(vk, down);
+      self->control.handleVirtualKey(vk, self->keyboard, down);
       return;
     }
     uint8_t shiftCtrlMask = 0;
