@@ -6,7 +6,7 @@ A hardware emulator for the Nascom-2 computer running on an ESP-32 with:
 * SD card reader for tape input/output
 
 ## History
-The Nascom-2 was an early (1979) Z80 based micro.  Typically homebuilt from a kit: https://en.wikipedia.org/wiki/Nascom_(computer_kit)
+The Nascom-2 was an early (1979) Z80 based micro.  Most machine were homebuilt from a kit: https://en.wikipedia.org/wiki/Nascom_(computer_kit)
 
 The one I built 40+ years ago still runs!
 
