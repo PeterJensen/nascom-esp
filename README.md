@@ -34,4 +34,28 @@ openSCAD was used to design a box, which can be printed on a 3D printer. I'm usi
 
 I use openSCAD because doing the designs is much like writing code, so I don't have to step out of my comfort zone.
 
-![Box](images/box-1.jpg)
+![Box 1](images/box-1.jpg)
+![Box 2](images/box-2.jpg)
+
+## Screenshots
+**Boot Screen**
+![Screen Boot](images/screen-boot.jpg)
+
+**Control Screen**
+![Screen Control](images/screen-control.jpg)
+
+**Loading and running BLS Pascal**
+![Screen Pascal Read](images/screen-pascal-read.jpg)
+![Screen Pascal Run](images/screen-pascal-run.jpg)
+![Screen Pascal Editor](images/screen-pascal-editor.jpg)
+![Screen Pascal Compile](images/screen-pascal-compile-and-run.jpg)
+
+**NAP Assembler**
+![Screen NAP](images/screen-nap-start.jpg)
+![Screen NAP Editor](images/screen-nap-editor.jpg)
+![Screen NAP Assemble](images/screen-nap-assemble.jpg)
+![Screen NAP Run](images/screen-nap-run.jpg)
+
+**Microsoft Basic**
+![Screen Basic Startup](images/screen-basic.jpg)
+![Screen Basic Run](images/screen-basic-run.jpg)
