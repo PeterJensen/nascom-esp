@@ -289,8 +289,23 @@ public:
       SD.begin(Pins::sdCs);
     if (inFileName[0] != 0)
       inFile = inFs->open(inFileName, "r");
-    if (outFileName[0] != 0)
-      outFile = outFs->open(outFileName, "w");
+    if (outFileName[0] != 0) {
+      if (outFs->exists(outFileName)) {
+        outFile = outFs->open(outFileName, "r");
+        size_t size = outFile.size();
+        outFile.close();
+        // Saving Basic files is done in two tape write operations
+        //   1. A header (0xd3 0xd3 0xd3 'X') 4 bytes is written
+        //   2. The content is written in the NASSYS Write format
+        // In order not to lose the header, the file must be appended to
+        if (size < 16)
+          outFile = outFs->open(outFileName, "a"); 
+        else
+          outFile = outFs->open(outFileName, "w");
+      }
+      else
+        outFile = outFs->open(outFileName, "w");
+    }
     filesAreOpen = true;
   }
   void closeFiles() {
@@ -320,11 +335,6 @@ public:
   void writeByte(uint8_t b) {
     DEBUG_PRINTF("writeByte: %02x\n", b);
     if (outFile && filesAreOpen) {
-      outFile.write(b);
-    }
-    else {
-      // some programs start writing data before turning on the LED
-      openFiles();
       outFile.write(b);
     }
   }
@@ -1236,8 +1246,8 @@ void setup() {
   nascomTape.init();
   nascomDisplay.init();
   nascomKeyboard.init();
-//  nascomTape.setInputFile(&LittleFS, "/blspascal13.cas");
-  nascomTape.setInputFile(&SD, "/Nip.cas");
+  nascomTape.setInputFile(&LittleFS, "/blspascal13.cas");
+//  nascomTape.setInputFile(&SD, "/Nip.cas");
   nascomTape.setOutputFile(&LittleFS, "/tape-out.cas");
   nascomMemory.nasFileLoad("/nassys3.nal");
   nascomMemory.nasFileLoad("/basic.nal");
