@@ -36,6 +36,7 @@ I use openSCAD because doing the designs is much like writing code, so I don't h
 
 ![Box 1](images/box-1.jpg)
 ![Box 2](images/box-2.jpg)
+![Box 2](images/box-3.jpg)
 
 ## Screenshots
 **Boot Screen**
