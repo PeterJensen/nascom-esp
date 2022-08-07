@@ -244,6 +244,8 @@ class NascomTape {
   FS   *inFs;
   FS   *outFs;
   bool  filesAreOpen;
+  bool  inIsOpen;
+  bool  outIsOpen;
 public:
 //  NascomTape() : tapeLed(false), inFileIsOpen(false), outFileIsOpen(false) {}
   void init() {
@@ -251,6 +253,8 @@ public:
     inFileName[0] = 0;
     outFileName[0] = 0;
     filesAreOpen = false;
+    inIsOpen = false;
+    outIsOpen = false;
   }
   void setLed(bool isOn) {
     tapeLed = isOn;
@@ -281,15 +285,44 @@ public:
     inFileName[maxFileNameLen] = 0;
     DEBUG_PRINTF("setInputFile: %s\n", inFileName);
   }
-  void openFiles() {
-    DEBUG_PRINTF("openFiles\n");
-    if (filesAreOpen)
+  void closeFiles() {
+    DEBUG_PRINTF("closeFiles\n");
+    if (!inIsOpen && !outIsOpen) {
+      DEBUG_PRINTF("closeFiles: Nothing to do\n");
       return;
-    if (inFs == &SD || outFs == &SD)
-      SD.begin(Pins::sdCs);
-    if (inFileName[0] != 0)
+    }
+    if (inFile) {
+      inFile.close();
+    }
+    if (outFile) {
+      outFile.close();
+    }
+    filesAreOpen = false;
+    inIsOpen = false;
+    outIsOpen = false;
+  }
+  bool hasData() {
+    return inFile && inFile.available();
+  }
+
+  uint8_t readByte() {
+    if (!tapeLed)
+      return 0;
+    if (!inIsOpen) {
       inFile = inFs->open(inFileName, "r");
-    if (outFileName[0] != 0) {
+      DEBUG_PRINTF("readByte: Opening %s => %s\n", inFileName, inFile ? "true" : "false");
+      inIsOpen = true;
+    }
+    if (!inFile.available()) {
+      inFile.seek(0);
+    }
+    return inFile.read();
+  }
+  void writeByte(uint8_t b) {
+  //  DEBUG_PRINTF("writeByte: %02x\n", b);
+    if (!tapeLed)
+      return;
+    if (!outIsOpen) {
       if (outFs->exists(outFileName)) {
         outFile = outFs->open(outFileName, "r");
         size_t size = outFile.size();
@@ -305,36 +338,10 @@ public:
       }
       else
         outFile = outFs->open(outFileName, "w");
-    }
-    filesAreOpen = true;
-  }
-  void closeFiles() {
-    DEBUG_PRINTF("closeFiles\n");
-    if (inFile) {
-      inFile.close();
+      DEBUG_PRINTF("writeByte: Opening %s => %s\n", outFileName, outFile ? "true" : "false");
+      outIsOpen = true;
     }
     if (outFile) {
-      outFile.close();
-    }
-    if (inFs == &SD || outFs == &SD)
-      SD.end();
-    filesAreOpen = false;
-  }
-  bool hasData() {
-    return inFile && inFile.available();
-  }
-  uint8_t readByte() {
-    if (!inFile) {
-      return 0;
-    }
-    if (!inFile.available()) {
-      inFile.seek(0);
-    }
-    return inFile.read();
-  }
-  void writeByte(uint8_t b) {
-    DEBUG_PRINTF("writeByte: %02x\n", b);
-    if (outFile && filesAreOpen) {
       outFile.write(b);
     }
   }
@@ -348,6 +355,7 @@ class NascomControl {
   NascomTape           &tape;
   static NascomControl *self;
   bool                  isActive = false;
+  static bool           hasSd;
 
   class FieldValues {
   protected:
@@ -395,15 +403,12 @@ class NascomControl {
       }
       values = (const char **)malloc(2*sizeof(void *));
       bool hasInternal = true; //LittleFS.begin();
-      bool hasSd       = SD.begin(Pins::sdCs);
       if (hasSd) {
         sdcard_type_t cardType = SD.cardType();
         if (cardType == CARD_NONE || cardType == CARD_UNKNOWN) {
           hasSd = false;
         }
       }
-      SD.end();
-
       numValues = 0;
       if (hasInternal) {
         values[numValues] = "Internal Flash";
@@ -457,7 +462,6 @@ class NascomControl {
       if (values != nullptr) {
         freeFileNames(values, numValues);
       }
-      bool hasSd = SD.begin(Pins::sdCs);
       if (!hasSd) {
         values = nullptr;
         numValues = 0;
@@ -466,7 +470,6 @@ class NascomControl {
       File dir = SD.open("/");
       values = makeFileNames(dir, &numValues);
       dir.close();
-      SD.end();
       this->reset();
       refreshed = true;
     }
@@ -653,6 +656,10 @@ public:
     self = this;
   }
 
+  void init(bool hasSd) {
+    this->hasSd = hasSd;
+  }
+
   static void handleVirtualKey(fabgl::VirtualKey *vk, fabgl::Keyboard &keyboard, bool down) {
     DEBUG_PRINTF("UI: handleVirtualKey\n");
     if (down && (*vk == fabgl::VK_TAB))
@@ -721,6 +728,7 @@ public:
   }
 };
 NascomControl *NascomControl::self = nullptr;
+bool           NascomControl::hasSd = false;
 
 // Nascom keyboard map.  Used to provide simulated input from keyboard
 class NascomKeyboardMap {
@@ -1085,15 +1093,10 @@ public:
         return ~val;
       }
       case 1:
-        if (tape.hasData() && tape.getLed()) {
-          return tape.readByte();
-        }
-        else {
-          return 0;
-        }
+        return tape.readByte();
       case 2: {
-          // UART Status: Always ready to send data. Query tape object for input available
-          return P2_IN_UART_TBR_EMPTY | (tape.hasData() && tape.getLed() ? P2_IN_UART_DATA_READY : 0);
+          // UART Status: Always ready to send data. Only provide input data if led is on
+          return P2_IN_UART_TBR_EMPTY | (tape.getLed() ? P2_IN_UART_DATA_READY : 0);
       }
       default:
         return 0;
@@ -1114,7 +1117,8 @@ public:
         }
         if ((zero2One & P0_OUT_TAPE_LED) != 0) {
           tape.setLed(true);
-          tape.openFiles();
+          //tape.openFiles();
+          //Note: files are opened on demand during the first read or write operation
         }
         if ((one2Zero & P0_OUT_TAPE_LED) != 0) {
           tape.setLed(false);
@@ -1222,7 +1226,8 @@ void setup() {
     DEBUG_PRINTF("LittleFS mount failed\n");
     return;
   }
-  if (!SD.begin(Pins::sdCs)) {
+  bool hasSd = SD.begin(Pins::sdCs);
+  if (!hasSd) {
     DEBUG_PRINTF("SD card mount failed\n");
   }
 
@@ -1234,18 +1239,20 @@ void setup() {
   }
   dir.close();
 
-  DEBUG_PRINTF("External files:\n");
-  dir = SD.open("/");
-  while (File file = dir.openNextFile()) {
-    DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
-    file.close();
+  if (hasSd) {
+    DEBUG_PRINTF("External files:\n");
+    dir = SD.open("/");
+    while (File file = dir.openNextFile()) {
+      DEBUG_PRINTF("Name: %s, Size: %d\n", file.name(), file.size());
+      file.close();
+    }
+    dir.close();
   }
-  dir.close();
-  SD.end();
 
   nascomTape.init();
   nascomDisplay.init();
   nascomKeyboard.init();
+  nascomControl.init(hasSd);
   nascomTape.setInputFile(&LittleFS, "/blspascal13.cas");
 //  nascomTape.setInputFile(&SD, "/Nip.cas");
   nascomTape.setOutputFile(&LittleFS, "/tape-out.cas");
