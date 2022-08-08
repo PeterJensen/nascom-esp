@@ -755,6 +755,7 @@ class NascomKeyboardMap {
   #define NK_CTRL           NK_MAKE(0, 3)
   #define NK_GRAPH          NK_MAKE(5, 6)
   #define NK_SPACE          NK_MAKE(7, 4)
+  #define NK_ENTER          NK_MAKE(0, 1)
   #define NK_0              NK_MAKE(6, 2)
   #define NK_2              NK_MAKE(6, 3)
   #define NK_A              NK_MAKE(4, 4)
@@ -1006,6 +1007,9 @@ class NascomKeyboard {
         break;
       case fabgl::VK_RIGHT:
         self->map.setKeyAll(NK_RIGHT | shiftCtrlMask, down);
+        break;
+      case fabgl::VK_RETURN:
+        self->map.setKeyAll(NK_ENTER | shiftCtrlMask, down);
         break;
       default:
         mapUpdated = false;
