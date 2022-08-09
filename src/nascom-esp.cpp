@@ -10,15 +10,20 @@
 // The project uses software from various sources:
 //
 // 1. Tommy Thorn's virtual-nascom: https://github.com/tommythorn/virtual-nascom:
-//    Nascom-2 keyboard simulation.  Original code is mostly rewritten, but the ideas are the same.
-//    Nascom-2 font definition.
+//    Many concepts and ideas are derived from Tommy's original work:
+//    Nascom-2 keyboard simulation:  Original code is mostly rewritten, but the ideas are the same.
+//      Tommy's original code was instrumental in getting this right.  Also, his feedback and
+//      debugging has been invaluable.
+//    Video RAM update: The idea of caching.
+//    CPU timing: Controlling timing with delays for each frame.
+//    Nascom-2 font definition: Copied directly from above repo.
 // 2. bitluni's ESP32Lib: https://github.com/bitluni/ESP32Lib:
-//    VGA driver logic.  Made it work with the Nascom-2 font defintion from 1)
+//    VGA driver logic:  Made it work with the Nascom-2 font defintion from 1)
 // 3. Fabrizio Di Vittorio's FabGL: https://github.com/fdivitto/FabGL:
-//    PS/2 keyboard handling.  This fabulous library does much more than just handling a PS/2
-//    keyboard.  It's also able to handle the VGA and Z80 CPU simulation, but those
-//    parts aren't used.  I'm considering using the Z80 simulator, since it tracks clock cycles,
-//    so it should be possible to get a more accurate simulation of time.
+//    PS/2 keyboard handling: This fabulous library does much more than just handling a PS/2
+//      keyboard.  It's also able to handle the VGA and Z80 CPU simulation, but those
+//      parts aren't used.  I'm considering using the Z80 simulator, since it tracks clock cycles,
+//      so it should be possible to get a more accurate simulation of time.
 // 4. Z80 emulator from Frank D. Cringle:
 //    There are many Z80 emulator's to choose from.  This is the one used by virtual-nascom, and
 //    I use it here as well.  It's been proven to work for NASCOM-2 simulation.
@@ -58,7 +63,6 @@ namespace z80 {
 
 static const char *startText =
   "      nASCOM-2 eMULATION ON esp-32 - V1.0\x17\x14"
-  "                BY pETER jENSEN\x17\x14"
   "          pRESS f1 FOR CONTROL SCREEN\x17\x14";
 
 // Pin configuration
