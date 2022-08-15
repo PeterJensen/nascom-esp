@@ -432,11 +432,16 @@ class NascomControl {
   };
   class FileNames {
   public:
+    static bool includeFile(File file) {
+      const char *name = file.name();
+      return (name != nullptr) && (name[0] != '.');
+    }
     static uint32_t fileCount(File dir) {
       uint32_t count = 0;
       dir.rewindDirectory();
       while (File file = dir.openNextFile()) {
-        count += 1;
+        if (includeFile(file))
+          count += 1;
         file.close();
       }
       return count;
@@ -447,6 +452,8 @@ class NascomControl {
       uint32_t fileNum = 0;
       dir.rewindDirectory();
       while (File file = dir.openNextFile()) {
+        if (!includeFile(file))
+          continue;
         const char *name = file.name();
         char *nameValue = (char *)malloc(strlen(name)+1);
         strcpy(nameValue, name);
@@ -707,13 +714,13 @@ public:
     addFieldWithValues(fields[tapeOutFs], 10, 5, 14, &tapeFsValues);
     addFieldWithText(fields[tapeOutFileName], 25, 5, 22, "tape-out.cas");
     display.setTextColor(display.white, display.blue);
-    display.drawTextAt(1, 7, "<F1>  Exit and save current selection");
-    display.drawTextAt(1, 8, "<TAB> Goto next field");
-    display.drawTextAt(1, 9, "Fields with fixed values:");
-    display.drawTextAt(1, 10, "  <\x0b\x5e> Cycle through values");
-    display.drawTextAt(1, 11, "Fields with user values:");
-    display.drawTextAt(1, 12, "  <BS>  Delete last character");
-    display.drawTextAt(1, 13, "  <CHR> Add 'CHR' as last character");
+    display.drawTextAt(2, 7, "  <F1>  Exit and save current selection");
+    display.drawTextAt(2, 8, "  <TAB> Goto next field");
+    display.drawTextAt(2, 9, "Fields with fixed values:");
+    display.drawTextAt(2, 10, "  <\x0b\x5e>  Cycle through values");
+    display.drawTextAt(2, 11, "Fields with user values:");
+    display.drawTextAt(2, 12, "  <BS>  Delete last character");
+    display.drawTextAt(2, 13, "  <CHR> Add 'CHR' as last character");
     setActiveField(firstField);
   }
 
