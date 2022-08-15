@@ -46,6 +46,10 @@
 #include "NascomFont.h"
 #include "simz80.h"
 
+#define VERSION "V1.1"
+static const char *version = VERSION;
+static const char *buildDate = __DATE__;
+
 namespace z80 {
   // Z80 state
   WORD af[2];                  // accumulator and flags (2 banks)
@@ -62,7 +66,7 @@ namespace z80 {
 };
 
 static const char *startText =
-  "      nASCOM-2 eMULATION ON esp-32 - V1.0\x17\x14"
+  "      nASCOM-2 eMULATION ON esp-32 - " VERSION "\x17\x14"
   "          pRESS f1 FOR CONTROL SCREEN\x17\x14";
 
 // Pin configuration
@@ -428,11 +432,16 @@ class NascomControl {
   };
   class FileNames {
   public:
+    static bool includeFile(File file) {
+      const char *name = file.name();
+      return (name != nullptr) && (name[0] != '.');
+    }
     static uint32_t fileCount(File dir) {
       uint32_t count = 0;
       dir.rewindDirectory();
       while (File file = dir.openNextFile()) {
-        count += 1;
+        if (includeFile(file))
+          count += 1;
         file.close();
       }
       return count;
@@ -443,6 +452,8 @@ class NascomControl {
       uint32_t fileNum = 0;
       dir.rewindDirectory();
       while (File file = dir.openNextFile()) {
+        if (!includeFile(file))
+          continue;
         const char *name = file.name();
         char *nameValue = (char *)malloc(strlen(name)+1);
         strcpy(nameValue, name);
@@ -688,18 +699,28 @@ public:
   void showScreen() {
     display.clear();
     setActiveField(noField);
-    display.drawTextAt(16, 1, "Nascom-2 Control");
-    display.drawTextAt(10, 3, "File System");
-    display.drawTextAt(25, 3, "File Name");
-    display.drawTextAt(1, 4, "Tape In");
-    display.drawTextAt(1, 6, "Tape Out");
+    display.drawTextAt(0, 0, version);
+    display.drawTextAt(37, 0, buildDate);
+    display.drawTextAt(16, 0, "Nascom-2 Control");
+    display.drawTextAt(10, 2, "File System");
+    display.drawTextAt(25, 2, "File Name");
+    display.drawTextAt(1, 3, "Tape In");
+    display.drawTextAt(1, 5, "Tape Out");
     tapeFsValues.refresh();
-    addFieldWithValues(fields[tapeInFs], 10, 4, 14, &tapeFsValues);
+    addFieldWithValues(fields[tapeInFs], 10, 3, 14, &tapeFsValues);
     tapeFileNamesInt.refresh();
     tapeFileNamesSd.refresh();
-    addFieldWithValues(fields[tapeInFileName], 25, 4, 22, &tapeFileNamesInt);
-    addFieldWithValues(fields[tapeOutFs], 10, 6, 14, &tapeFsValues);
-    addFieldWithText(fields[tapeOutFileName], 25, 6, 22, "tape-out.cas");
+    addFieldWithValues(fields[tapeInFileName], 25, 3, 22, &tapeFileNamesInt);
+    addFieldWithValues(fields[tapeOutFs], 10, 5, 14, &tapeFsValues);
+    addFieldWithText(fields[tapeOutFileName], 25, 5, 22, "tape-out.cas");
+    display.setTextColor(display.white, display.blue);
+    display.drawTextAt(2, 7, "  <F1>  Exit and save current selection");
+    display.drawTextAt(2, 8, "  <TAB> Goto next field");
+    display.drawTextAt(2, 9, "Fields with fixed values:");
+    display.drawTextAt(2, 10, "  <\x0b\x5e>  Cycle through values");
+    display.drawTextAt(2, 11, "Fields with user values:");
+    display.drawTextAt(2, 12, "  <BS>  Delete last character");
+    display.drawTextAt(2, 13, "  <CHR> Add 'CHR' as last character");
     setActiveField(firstField);
   }
 
