@@ -42,7 +42,7 @@ I use openSCAD because doing the designs is much like writing code, so I don't h
 ![Screen Boot](images/screen-boot.jpg)
 
 **Control Screen**
-![Screen Control](images/screen-control.jpg)
+![Screen Control](images/screen-control-v1-1.jpg)
 
 **Loading and running BLS Pascal**
 ![Screen Pascal Read](images/screen-pascal-read.jpg)
