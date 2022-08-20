@@ -1,4 +1,3 @@
-# Nascom-2 on ESP32
 
 A hardware emulator for the Nascom-2 computer running on an ESP-32 with:
 * VGA for display output
@@ -60,3 +59,14 @@ I use openSCAD because doing the designs is much like writing code, so I don't h
 **Microsoft Basic**
 ![Screen Basic Startup](images/screen-basic.jpg)
 ![Screen Basic Run](images/screen-basic-run.jpg)
+
+**nasForth**
+
+Forth was also available on the Nascom-2.  Several implementations were made.  There's three (HullForth, nasForth, and T-Forth) on [nascomhomepage](http://www.nascomhomepage.com).  I've added nasForth to the permanent selection in the Internal Flash.
+
+The Forth programming system had an innovative way of allowing the user to progressively develop their programs through compilation of word definitions and invocation of those definitions via a runtime interpreter.
+
+With that said, I wouldn't recommend using Forth for anything substantial.  As a programming language, it has many drawbacks; mainly it's hard to write and read.  It took me many hours to get the PRIMES algorithm below working, and I even had a headstart, because I found some code on Youtube from [ForthFreak](https://www.youtube.com/watch?v=V5VGuNTrDL8).  I'm not a seasoned Forth programmer, though.  Not a Forth programmer at all, actually.  It is a great language, if you want to impress friends and colleagues with your mad obscure coding skills.
+
+![Screen Forth Code](images/screen-forth-code.jpg)
+![Screen Forth Run](images/screen-forth-run.jpg)
