@@ -66,8 +66,8 @@ namespace z80 {
 };
 
 static const char *startText =
-  "      nASCOM-2 eMULATION ON esp-32 - " VERSION "\x17\x14"
-  "          pRESS f1 FOR CONTROL SCREEN\x17\x14";
+  "      Nascom-2 Emulation on ESP-32 - " VERSION "\x17\x14"
+  "          Press F1 for control screen\x17\x14";
 
 // Pin configuration
 class Pins {
@@ -990,6 +990,7 @@ class NascomKeyboard {
   const char            *startText;
   uint32_t               startTextIndex = 0;
   bool                   startTextKeyDown = false;
+  uint8_t                startTextChar;
   static NascomKeyboard *self;
   static void handleVirtualKey(fabgl::VirtualKey *vk, bool down) {
     DEBUG_PRINTF("%s (%s)\n", self->keyboard.virtualKeyToString(*vk), down ? "down" : "up");
@@ -1066,12 +1067,17 @@ public:
   void mapRewind() {
     if (startText[startTextIndex] != 0) {
       if (startTextKeyDown) {
-        map.setAsciiChar(startText[startTextIndex], false);
+        map.setAsciiChar(startTextChar, false);
         startTextKeyDown = false;
         startTextIndex += 1;
       }
       else {
-        map.setAsciiChar(startText[startTextIndex], true);
+        startTextChar = startText[startTextIndex];
+        if (islower(startTextChar))
+          startTextChar = toupper(startTextChar);
+        else if (isupper(startTextChar))
+          startTextChar = tolower(startTextChar);
+        map.setAsciiChar(startTextChar, true);
         startTextKeyDown = true;
       }
     }
